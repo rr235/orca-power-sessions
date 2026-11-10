@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Power Sessions</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500&family=Geist+Mono:wght@400&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #ffffff;
+    --ink: #17181b;
+    --muted: #63656b;
+    --rule: #e6e6e3;
+    --accent: #a86400;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1600px; height: 1000px; overflow: hidden; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: 'Geist', system-ui, sans-serif;
+    font-weight: 400;
+    display: grid;
+    grid-template-columns: 580px 1fr;
+    align-items: center;
+    padding: 0 70px 0 110px;
+    gap: 40px;
+    position: relative;
+  }
+  .copy { display: flex; flex-direction: column; gap: 30px; }
+  .logo { width: 120px; height: auto; }
+  h1 { font-size: 76px; font-weight: 400; letter-spacing: -0.035em; line-height: 1; }
+  .lede { font-size: 27px; line-height: 1.4; color: var(--muted); font-weight: 300; }
+  ol { list-style: none; display: flex; flex-direction: column; border-top: 1px solid var(--rule); counter-reset: step; }
+  li { font-size: 20px; line-height: 1.4; display: flex; gap: 14px; align-items: baseline; padding-top: 16px; counter-increment: step; }
+  li::before { content: '0' counter(step); font-family: 'Geist Mono', monospace; font-size: 16px; color: var(--accent); min-width: 26px; }
+  .shots { position: relative; height: 1000px; }
+  /* Each screenshot carries its own margin in its theme's background, with a small shadow around it. */
+  .shot {
+    position: absolute;
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: 0 2px 4px rgba(16, 18, 27, 0.14), 0 8px 24px rgba(16, 18, 27, 0.24);
+  }
+  .shot img { display: block; }
+  /* The session list is the centre piece, cut in the gap below a project. The other shots overlap
+     its edges, each laid over the ones before it. */
+  .sessions { left: 70px; top: 70px; }
+  .sessions .clip { width: 408px; height: 640px; overflow: hidden; }
+  /* A pale glow on the dark session list only, under each shot that overlaps it. Each box matches
+     that shot's place and size, relative to the session list. */
+  .cast { position: absolute; border-radius: 16px; box-shadow: 0 0 16px rgba(255, 255, 255, 0.16); }
+  .cast.on-prs { left: 380px; top: -20px; width: 361px; height: 329px; }
+  .cast.on-quick { left: 355px; top: 360px; width: 405px; height: 527px; }
+  .cast.on-lower { left: -70px; top: 600px; width: 361px; height: 213px; }
+  .prs { left: 450px; top: 50px; }
+  .quick { left: 425px; top: 430px; }
+  .lower { left: 0; top: 670px; }
+  /* Placed against the page, above the copy. */
+  .upper { left: 300px; top: 70px; }
+</style>
+</head>
+<body>
+  <section class="copy">
+    <img class="logo" src="icon.png" alt="">
+    <h1>Power Sessions</h1>
+    <p class="lede">An overview of your Claude and Codex sessions across your projects.</p>
+    <ol>
+      <li>See model, tokens, context and pull requests per session</li>
+      <li>Spot token-heavy models and long conversations</li>
+      <li>Compact a session directly, without switching to it</li>
+      <li>Create quick actions for the scripts you run most often</li>
+    </ol>
+  </section>
+  <div class="shots">
+    <div class="shot sessions">
+      <div class="clip"><img src="screenshots/sessions-dark.png" alt=""></div>
+      <div class="cast on-prs"></div><div class="cast on-quick"></div><div class="cast on-lower"></div>
+    </div>
+    <div class="shot lower"><img src="screenshots/session-details-active-tokyo-night.png" alt=""></div>
+    <div class="shot quick"><img src="screenshots/quick-actions-dark.png" alt=""></div>
+    <div class="shot prs"><img src="screenshots/session-details-prs-light.png" alt=""></div>
+  </div>
+  <div class="shot upper"><img src="screenshots/session-details-fable-light.png" alt=""></div>
+</body>
+</html>

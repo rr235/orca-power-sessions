@@ -1,0 +1,78 @@
+{
+  "manifestVersion": 2,
+  "id": "power-sessions",
+  "name": "Power Sessions",
+  "version": "0.1.0",
+  "description": "On macOS, monitor Claude and Codex sessions across projects with status, model and effort, token and context usage, turns, tool calls, compactions, workspace branches and pull requests; highlight Fable and Astra models and long conversations, compact sessions between turns, and show their tabs. Quick actions run and stop your dev scripts, show their terminals and open their URLs.",
+  "author": {
+    "name": "rr235",
+    "url": "https://github.com/rr235"
+  },
+  "license": "MIT",
+  "repository": "https://github.com/rr235/orca-power-sessions",
+  "icon": "assets/icon.png",
+  "cover": {
+    "path": "assets/cover.png",
+    "alt": "Power Sessions: the Orca side panel with sessions by project, session details with model, tokens, context and pull requests, and quick actions"
+  },
+  "screenshots": [
+    {
+      "path": "assets/plugin-page/1-sessions.png",
+      "alt": "The Sessions list in a dark theme: three projects with their Claude and Codex sessions, one marked with a green dot",
+      "caption": "Every Claude and Codex session, grouped by project. A green dot marks an agent that is working."
+    },
+    {
+      "path": "assets/plugin-page/2-session-details.png",
+      "alt": "Session details in a light theme: idle, Opus 5.5 High, 153M tokens, a context bar at 275k of 400k, turn counts, a branch and four pull requests",
+      "caption": "Status, model and effort, tokens, context, turns, tool calls, compactions, branch and pull requests."
+    },
+    {
+      "path": "assets/plugin-page/3-status-and-warnings.png",
+      "alt": "Two session details in a dark theme: an active session with 27 turns in the warning colour, and an idle one with Fable 5.1 in the warning colour",
+      "caption": "Fable and Astra model names and conversations above 20 turns show in the warning colour; above 35 turns, in red."
+    },
+    {
+      "path": "assets/plugin-page/4-compact.png",
+      "alt": "Session details in a light theme with the Compact button and its tooltip, Run /compact in this session",
+      "caption": "Compact a session in one press, without switching to it."
+    },
+    {
+      "path": "assets/plugin-page/5-quick-actions.png",
+      "alt": "Quick actions in a dark theme: two running actions with stop, terminal and open buttons, and two stopped ones with run and edit buttons",
+      "caption": "Quick actions run and stop your scripts, show their terminal and open their URL."
+    },
+    {
+      "path": "assets/plugin-page/6-add-action.png",
+      "alt": "The Add new action form in a light theme, with a project, a name, the command bun run dev and an optional URL",
+      "caption": "Save a script as a quick action: pick the project, then give it a name and a command."
+    }
+  ],
+  "engines": {
+    "orca": ">=1.4.248"
+  },
+  "execution": "trusted-worker",
+  "pluginApi": 1,
+  "main": "src/worker.ts",
+  "capabilities": [
+    {
+      "kind": "storage:own"
+    },
+    {
+      "kind": "workspace:read"
+    },
+    {
+      "kind": "agent:read"
+    }
+  ],
+  "contributes": {
+    "panels": [
+      {
+        "id": "power-sessions",
+        "title": "Power Sessions",
+        "icon": "zap",
+        "entry": "src/panel.tsx",
+        "ui": "components"
+      }
+    ]
+  }
+}
