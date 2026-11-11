@@ -17,7 +17,7 @@ agent is doing and how much it has used, compact a long conversation, and run yo
 
 | Session details | Compact |
 | --- | --- |
-| ![Session details with model, tokens, context, turns, branch and pull requests](assets/screenshots/session-details-prs-light.png) | ![The Compact button with its tooltip, Run /compact in this session](assets/screenshots/compact-dark.png) |
+| ![Session details with model, tokens, context, turns, branch and pull requests](assets/screenshots/session-details-prs-light.png) | ![Session details with the Compact button beside the status](assets/screenshots/compact-dark.png) |
 
 | Quick actions | Add an action |
 | --- | --- |

@@ -14,7 +14,7 @@ type Capture = { file: string; height?: number }
 
 /** Page name -> its colour scheme and the captures on it, left to right. */
 const PAGES: Record<string, { scheme: Scheme; captures: Capture[] }> = {
-  '1-sessions': { scheme: 'dark', captures: [{ file: 'sessions-dark.png', height: 444 }] },
+  '1-sessions': { scheme: 'dark', captures: [{ file: 'sessions-dark.png', height: 470 }] },
   '2-session-details': { scheme: 'light', captures: [{ file: 'session-details-prs-light.png' }] },
   '3-status-and-warnings': {
     scheme: 'dark',
