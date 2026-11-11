@@ -17,6 +17,7 @@ const requests = {
 export default defineCheck({
   demo: { requests },
   details: { requests, storage: { expanded: { p1: true, p2: true } } },
+  pinned: { requests, storage: { pinned: ['p1'], expanded: { p2: true } } },
   worktrees: { requests: { ...requests, 'overview.load': () => DEMO_WORKTREES }, storage: { expanded: { p1: true } } },
   empty: { requests: { ...requests, 'overview.load': () => ({ ...DEMO, sessions: [] }) } }
 })

@@ -34,30 +34,18 @@
   ol { list-style: none; display: flex; flex-direction: column; border-top: 1px solid var(--rule); counter-reset: step; }
   li { font-size: 20px; line-height: 1.4; display: flex; gap: 14px; align-items: baseline; padding-top: 16px; counter-increment: step; }
   li::before { content: '0' counter(step); font-family: 'Geist Mono', monospace; font-size: 16px; color: var(--accent); min-width: 26px; }
-  .shots { position: relative; height: 1000px; }
+  /* Three separate shots, none overlapping: the session list on the left, cut in the gap below a
+     project so it ends level with the right column, which holds the pull requests above Quick actions. */
+  .shots { display: flex; align-items: center; justify-content: center; gap: 24px; height: 1000px; }
+  .column { display: flex; flex-direction: column; gap: 20px; }
   /* Each screenshot carries its own margin in its theme's background, with a small shadow around it. */
   .shot {
-    position: absolute;
     border-radius: 16px;
     overflow: hidden;
     box-shadow: 0 2px 4px rgba(16, 18, 27, 0.14), 0 8px 24px rgba(16, 18, 27, 0.24);
   }
   .shot img { display: block; }
-  /* The session list is the centre piece, cut in the gap below a project. The other shots overlap
-     its edges, each laid over the ones before it. */
-  .sessions { left: 70px; top: 70px; }
-  .sessions .clip { width: 408px; height: 640px; overflow: hidden; }
-  /* A pale glow on the dark session list only, under each shot that overlaps it. Each box matches
-     that shot's place and size, relative to the session list. */
-  .cast { position: absolute; border-radius: 16px; box-shadow: 0 0 16px rgba(255, 255, 255, 0.16); }
-  .cast.on-prs { left: 380px; top: -20px; width: 361px; height: 329px; }
-  .cast.on-quick { left: 355px; top: 360px; width: 405px; height: 527px; }
-  .cast.on-lower { left: -70px; top: 600px; width: 361px; height: 213px; }
-  .prs { left: 450px; top: 50px; }
-  .quick { left: 425px; top: 430px; }
-  .lower { left: 0; top: 670px; }
-  /* Placed against the page, above the copy. */
-  .upper { left: 300px; top: 70px; }
+  .sessions .clip { width: 408px; height: 573px; overflow: hidden; }
 </style>
 </head>
 <body>
@@ -74,13 +62,12 @@
   </section>
   <div class="shots">
     <div class="shot sessions">
-      <div class="clip"><img src="screenshots/sessions-dark.png" alt=""></div>
-      <div class="cast on-prs"></div><div class="cast on-quick"></div><div class="cast on-lower"></div>
+      <div class="clip"><img src="screenshots/cover-sessions-dark.png" alt=""></div>
     </div>
-    <div class="shot lower"><img src="screenshots/session-details-active-tokyo-night.png" alt=""></div>
-    <div class="shot quick"><img src="screenshots/quick-actions-dark.png" alt=""></div>
-    <div class="shot prs"><img src="screenshots/session-details-prs-light.png" alt=""></div>
+    <div class="column">
+      <div class="shot prs"><img src="screenshots/session-details-prs-light.png" alt=""></div>
+      <div class="shot quick"><img src="screenshots/cover-quick-actions-dark.png" alt=""></div>
+    </div>
   </div>
-  <div class="shot upper"><img src="screenshots/session-details-fable-light.png" alt=""></div>
 </body>
 </html>

@@ -17,7 +17,9 @@ const ICONS: Record<string, { icon: string; tone: Tone }> = {
   'status-waiting': { icon: 'circle-pause', tone: 'warning' },
   'status-failed': { icon: 'circle-x', tone: 'danger' },
   'status-stopped': { icon: 'circle-slash', tone: 'muted' },
-  'open-external': { icon: 'external-link', tone: 'muted' }
+  'open-external': { icon: 'external-link', tone: 'muted' },
+  pin: { icon: 'pin', tone: 'muted' },
+  unpin: { icon: 'pin-off', tone: 'muted' }
 }
 
 /** Each colour per Orca colour scheme; `muted` is close to Orca's muted text. */

@@ -41,6 +41,8 @@ Review the access request, then run the approval command Orca prints.
 1. Open **Power Sessions**, the lightning-bolt panel in Orca’s right sidebar. Your projects and sessions appear on their own.
 2. Click a session to expand or collapse its details. Press the terminal button beside it to show its tab. Click a project to open its main checkout.
 3. Press **Compact** in the details to compact the conversation.
+4. Press the pin beside a session to keep its details open under **Pinned**, above the list. Press it again to unpin.
+5. Click **Sessions** or **Quick actions** to collapse or expand that section.
 
 Power Sessions does not create sessions or worktrees. Open them in Orca as usual.
 
@@ -61,7 +63,7 @@ started elsewhere have only the URL control. A stopped action has an edit button
 - **Turn colours.** Turns show in the warning colour above 20 and in red above 35, counted since the last compaction, or from the start before the first one.
 - **Context size.** Capacity comes from the transcript or from Orca. For Claude, it falls back to an estimate for the model.
 - **Orca internals.** Compacting a chat and showing a tab use internal Orca APIs, which can change between releases. Failures show in the panel.
-- **Refresh.** While visible, the panel reloads every 15 seconds. Agent status changes and workspace creation or removal also trigger a reload. The minus button beside **Sessions** collapses all details and reloads.
+- **Refresh.** While visible, the panel reloads every 15 seconds. Agent status changes and workspace creation or removal also trigger a reload. The refresh button beside **Sessions** collapses all details, except pinned ones, and reloads.
 
 ## What it reads and runs
 
