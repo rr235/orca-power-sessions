@@ -28,3 +28,11 @@ jobs:
 
       - run: orca-ide plugin test .
       - run: orca-ide plugin check .
+
+      - name: Check a new version has release notes
+        run: |
+          version=$(jq -r .version orca-plugin.json)
+          if ! git ls-remote --exit-code --tags origin "refs/tags/v$version" >/dev/null && [ ! -f ".github/release-notes/$version.md" ]; then
+            echo "::error::Version $version needs .github/release-notes/$version.md"
+            exit 1
+          fi
