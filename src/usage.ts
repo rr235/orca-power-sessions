@@ -9,7 +9,9 @@ import { chatSessionId } from './overview'
 import type { SessionUsage, TokenSplit } from './protocol'
 
 const ORCA_DATA = join(homedir(), 'Library', 'Application Support', 'orca')
-const HOOK_STATUS = join(ORCA_DATA, 'agent-hooks', 'last-status.json')
+// Orca keeps its hook status in an SQLite log since 1.4.256, and in a JSON file before.
+const HOOK_STATUS_DB = join(ORCA_DATA, 'agent-hooks', 'last-status.db')
+const HOOK_STATUS_JSON = join(ORCA_DATA, 'agent-hooks', 'last-status.json')
 const SESSION_STORE = join(ORCA_DATA, 'agent-session-journal.db')
 const CHAT_PANE = 'structured-agent-session-'
 const SAFE_ID = /^[A-Za-z0-9_-]+$/
@@ -18,13 +20,32 @@ type Agent = 'claude' | 'codex'
 /** Where a session's numbers live: its transcript, and what Orca knows without reading it. */
 type Source = { agent: Agent; transcript: string | null; model: string | null; effort: string | null }
 
-type HookEntry = { source?: string; providerSession?: { transcriptPath?: string; effort?: string } }
+type HookEntry = { paneKey?: string; source?: string; providerSession?: { transcriptPath?: string; effort?: string } }
 
 /** Terminal sessions' transcripts and effort, by pane key, from Orca's hook status file. */
 export function parseHookStatus(json: string): Map<string, Source> {
-  const entries = (JSON.parse(json) as { entries?: Record<string, HookEntry> }).entries ?? {}
+  return hookSources(Object.entries((JSON.parse(json) as { entries?: Record<string, HookEntry> }).entries ?? {}))
+}
+
+/**
+ * Terminal sessions' transcripts and effort, by pane key, from Orca's hook status store: the SQLite
+ * log, whose later rows replace earlier ones, else the JSON file of an older Orca.
+ */
+export async function hookStatus(db = HOOK_STATUS_DB, json = HOOK_STATUS_JSON): Promise<Map<string, Source>> {
+  const out = await run('sqlite3', ['-readonly', '-json', db, 'select value from rows order by seq']).catch(() => null)
+  if (out === null) {
+    return readFile(json, 'utf8').then(parseHookStatus).catch(() => new Map<string, Source>())
+  }
+  const rows = out.trim() ? (parse<{ value: string }[]>(out) ?? []) : []
+  return hookSources(rows.flatMap((row) => {
+    const entry = parse<HookEntry>(row.value)
+    return entry?.paneKey && entry.source ? [[entry.paneKey, entry] as [string, HookEntry]] : []
+  }))
+}
+
+function hookSources(entries: [string, HookEntry][]): Map<string, Source> {
   const sources = new Map<string, Source>()
-  for (const [paneKey, entry] of Object.entries(entries)) {
+  for (const [paneKey, entry] of entries) {
     const agent = entry.source === 'claude' || entry.source === 'codex' ? entry.source : null
     if (agent) {
       const session = entry.providerSession
@@ -453,7 +474,7 @@ export async function tabPositions(tabIds: string[]): Promise<Map<string, number
 
 /** Model, effort, tokens and context use for each session key that can be traced to a transcript or record. */
 export async function sessionUsage(keys: string[]): Promise<Record<string, SessionUsage>> {
-  const hooks = await readFile(HOOK_STATUS, 'utf8').then(parseHookStatus).catch(() => new Map<string, Source>())
+  const hooks = await hookStatus()
   const chatIds = new Map(keys.flatMap((key) => {
     const id = chatSessionId(key)
     return id ? [[key, id] as [string, string]] : []
