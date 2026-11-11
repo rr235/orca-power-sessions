@@ -1,6 +1,6 @@
 # Releasing
 
-Merging to `main` ships nothing. The community catalog picks up new `vX.Y.Z` tags, so merged changes wait on `main` until the next release.
+Feature and fix PRs wait on `main` until the next release. Merging a release PR publishes its version as a new `vX.Y.Z` tag and GitHub release, which the community catalog picks up.
 
 ## Versions
 
@@ -18,20 +18,9 @@ Merging to `main` ships nothing. The community catalog picks up new `vX.Y.Z` tag
    git log --oneline "$(git describe --tags --abbrev=0)..main"
    ```
 
-2. Open a PR titled `chore(release): X.Y.Z` that only bumps `version` in `orca-plugin.json`.
-3. Merge once CI passes. It runs `orca plugin test .` and `orca plugin check .` on the latest Orca.
-4. After it merges, tag the merge commit with the same version and push the tag:
-
-   ```sh
-   git tag -a vX.Y.Z -m vX.Y.Z <merge-commit>
-   git push origin vX.Y.Z
-   ```
-
-5. Publish the release notes:
-
-   ```sh
-   gh release create vX.Y.Z --verify-tag --title vX.Y.Z --notes-file <notes.md>
-   ```
+2. Open a PR titled `chore(release): X.Y.Z` that bumps `version` in `orca-plugin.json` and adds the release notes as `.github/release-notes/X.Y.Z.md`.
+3. Merge once CI passes. It runs `orca plugin test .` and `orca plugin check .` on the latest Orca, and fails when a new version has no release notes.
+4. The Release workflow then tags the merge commit `vX.Y.Z` and publishes the notes as the GitHub release.
 
 ## Release notes
 
@@ -39,4 +28,4 @@ Merging to `main` ships nothing. The community catalog picks up new `vX.Y.Z` tag
 - Add a bullet per user-visible change.
 - End with "No new plugin capabilities. Updates install without re-approval." or name each capability added.
 
-The catalog pins each tag. Never move or reuse a tag: a mistake ships as the next patch release.
+The catalog pins each tag. Never move or reuse a tag: the workflow skips a version that already has one, so a mistake ships as the next patch release.

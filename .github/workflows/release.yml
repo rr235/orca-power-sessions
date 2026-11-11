@@ -1,0 +1,41 @@
+name: Release
+
+# A merged version bump publishes itself: tag the merge commit and release the version's notes.
+on:
+  push:
+    branches: [main]
+    paths: [orca-plugin.json]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Tag and publish a new version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(jq -r .version orca-plugin.json)
+          tag="v$version"
+          # A version that already has a tag is never released again: tags are never moved or reused.
+          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null; then
+            echo "$tag already exists, nothing to release."
+            exit 0
+          fi
+          notes=".github/release-notes/$version.md"
+          if [ ! -f "$notes" ]; then
+            echo "::error::Version $version has no $notes"
+            exit 1
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git tag -a "$tag" -m "$tag" "$GITHUB_SHA"
+          git push origin "$tag"
+          gh release create "$tag" --verify-tag --title "$tag" --notes-file "$notes"
