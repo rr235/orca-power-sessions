@@ -617,7 +617,8 @@ function SessionLine({ session }: { session: Session }) {
         icon="terminal"
         label={`Show ${session.title} tab`}
         size="xs"
-        variant="ghost"
+        variant="solid"
+        tone="success"
         disabled={!session.path}
         onPress={() => focusSession(session)}
       />

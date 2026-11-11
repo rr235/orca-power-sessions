@@ -61,6 +61,8 @@ test('shows servers, sessions and projects, and starts a server', async () => {
     const line = view.find(row('Onboarding checklist for new tenants'))
     const tab = view.find({ type: 'IconButton', label: 'Show Onboarding checklist for new tenants tab' })
     assert.ok(line && tab && line.path < tab.path && tab.props.icon === 'terminal', 'a terminal button after the title')
+    assert.equal(tab?.props.variant, 'solid', 'the terminal button is solid')
+    assert.equal(tab?.props.tone, 'success', 'the terminal button is green')
     await view.press(tab as never)
     assert.deepEqual(focused, ['p1 /w/platform'], 'the terminal button shows its tab in Orca')
     assert.equal(title('Review search ranking change'), true, 'the pressed session is the one shown now')
