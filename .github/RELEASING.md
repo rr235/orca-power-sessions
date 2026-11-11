@@ -1,6 +1,6 @@
 # Releasing
 
-Merging to `main` ships nothing. The community catalog picks up new `vX.Y.Z` tags, so merged changes wait on `main` until the next release.
+Feature and fix PRs wait on `main` until the next release. Merging a release PR publishes its version as a new `vX.Y.Z` tag and GitHub release, which the community catalog picks up.
 
 ## Versions
 
