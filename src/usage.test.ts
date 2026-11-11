@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { assert, test } from 'orca/testing'
@@ -7,7 +7,7 @@ import { infoOf } from './pulls'
 import { contextLabel, countLabel, modelLabel, modelTone, tokenLabel, tokensStatement, turnsTone } from './session-details'
 import { run } from './cli'
 import { chatSessionId } from './overview'
-import { chatSource, claudeWindow, contextReports, currentContext, parseHookStatus, Tally } from './usage'
+import { chatSource, claudeWindow, contextReports, currentContext, hookStatus, parseHookStatus, Tally } from './usage'
 
 test('forgets the context at a compaction, and takes a newer report from Orca', () => {
   const tally = new Tally()
@@ -212,6 +212,36 @@ test('traces chat and terminal sessions to their transcripts', () => {
   )
   assert.deepEqual([...hooks.keys()], ['tab:leaf'])
   assert.deepEqual(hooks.get('tab:leaf'), { agent: 'claude', transcript: '/t.jsonl', model: null, effort: 'max' })
+})
+
+test("reads terminal sessions from Orca's hook status log, else its older file", async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'quick-actions-'))
+  const db = join(dir, 'last-status.db')
+  const json = join(dir, 'last-status.json')
+  const row = (seq: number, key: string, value: object) => `(${seq}, '${key}', '${JSON.stringify(value)}')`
+  try {
+    await run('sqlite3', [
+      db,
+      `create table rows (seq, key, value);
+       insert into rows values
+         ${row(1, 'entry', { paneKey: 't1:l1', source: 'codex', providerSession: { transcriptPath: '/old.jsonl' } })},
+         ${row(2, 'entry', { paneKey: 't2:l2', source: 'claude', providerSession: { transcriptPath: '/c.jsonl', effort: 'high' } })},
+         ${row(3, 'commitment', { paneKey: 't2:l2', launchTokenHash: 'h' })},
+         ${row(4, 'entry', { paneKey: 't3:l3', source: 'shell' })},
+         ${row(5, 'entry', { paneKey: 't1:l1', source: 'codex', providerSession: { transcriptPath: '/new.jsonl' } })};`
+    ])
+    // A later row for a pane replaces an earlier one; rows without an agent are left out.
+    const hooks = await hookStatus(db, json)
+    assert.deepEqual(Object.fromEntries(hooks), {
+      't1:l1': { agent: 'codex', transcript: '/new.jsonl', model: null, effort: null },
+      't2:l2': { agent: 'claude', transcript: '/c.jsonl', model: null, effort: 'high' }
+    })
+    await writeFile(json, JSON.stringify({ entries: { 'old:leaf': { source: 'claude', providerSession: { transcriptPath: '/o.jsonl' } } } }))
+    assert.deepEqual([...(await hookStatus(join(dir, 'missing.db'), json)).keys()], ['old:leaf'], 'an older Orca keeps its JSON file')
+    assert.equal((await hookStatus(join(dir, 'missing.db'), join(dir, 'missing.json'))).size, 0)
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
 })
 
 test('gives each session its own pull requests, the tracked one first', () => {
