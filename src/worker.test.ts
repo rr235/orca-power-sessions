@@ -108,13 +108,16 @@ test('orders sessions like Orca\'s sidebar, by workspace and then tab position',
   assert.deepEqual([...workspaceRanks(ps).keys()], ['also-new', 'new', 'manual', 'old', 'none'])
 })
 
-test('lists projects in Orca order with paths and live agent counts', () => {
-  const projects = parseProjects(PROJECTS, REPOS, parseSessions(PS, PROJECTS))
+test('lists projects in Orca order with paths, live agent and worktree counts', () => {
+  const ps = JSON.stringify({
+    result: { worktrees: [...JSON.parse(PS).result.worktrees, { worktreeId: 'r-blog::/c/blog-draft', repoId: 'r-blog', displayName: 'draft', agents: [] }] }
+  })
+  const projects = parseProjects(PROJECTS, REPOS, parseSessions(PS, PROJECTS), ps)
   assert.deepEqual(
-    projects.map((p) => [p.name, p.path, p.agents]),
+    projects.map((p) => [p.name, p.path, p.agents, p.worktrees]),
     [
-      ['Personal Blog', '/c/blog', 2],
-      ['Acme', null, 1]
+      ['Personal Blog', '/c/blog', 2, 2],
+      ['Acme', null, 1, 1]
     ]
   )
 })
@@ -148,9 +151,9 @@ test('finds the address a dev server printed, preferring its Local line', () => 
 })
 
 const PROJECT_LIST: Project[] = [
-  { id: 'p-web', name: 'Web', repo: 'o/web', path: '/c/web', agents: 0 },
-  { id: 'p-api', name: 'API', repo: 'o/api', path: '/c/api', agents: 0 },
-  { id: 'p-cloud', name: 'Cloud only', repo: 'o/cloud', path: null, agents: 0 }
+  { id: 'p-web', name: 'Web', repo: 'o/web', path: '/c/web', agents: 0, worktrees: 1 },
+  { id: 'p-api', name: 'API', repo: 'o/api', path: '/c/api', agents: 0, worktrees: 1 },
+  { id: 'p-cloud', name: 'Cloud only', repo: 'o/cloud', path: null, agents: 0, worktrees: 1 }
 ]
 const WEB: QuickAction = { id: 'web', name: 'Web', command: 'bun run dev', projectId: null, path: '/c/web', url: 'http://localhost:3000' }
 

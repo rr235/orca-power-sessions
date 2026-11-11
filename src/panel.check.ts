@@ -1,7 +1,7 @@
 // `orca plugin check` and `orca plugin shot --scenario` render the panel once per scenario, with
 // every worker request stubbed so no real session reaches the image.
 import { defineCheck } from 'orca/testing'
-import { DEMO, DEMO_USAGE } from './fixtures'
+import { DEMO, DEMO_USAGE, DEMO_WORKTREES } from './fixtures'
 
 const requests = {
   'overview.load': () => DEMO,
@@ -17,5 +17,6 @@ const requests = {
 export default defineCheck({
   demo: { requests },
   details: { requests, storage: { expanded: { p1: true, p2: true } } },
+  worktrees: { requests: { ...requests, 'overview.load': () => DEMO_WORKTREES }, storage: { expanded: { p1: true } } },
   empty: { requests: { ...requests, 'overview.load': () => ({ ...DEMO, sessions: [] }) } }
 })

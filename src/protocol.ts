@@ -33,13 +33,15 @@ export type Server = {
   terminal: string | null
 }
 
-/** An Orca project, with its main checkout and how many agents run in any of its workspaces. */
+/** An Orca project, with its main checkout, how many agents run in any of its workspaces and how many workspaces it has. */
 export type Project = {
   id: string
   name: string
   repo: string
   path: string | null
   agents: number
+  /** Orca workspaces (worktrees) of the project, the main checkout included. */
+  worktrees: number
 }
 
 export type AgentState = 'working' | 'blocked' | 'waiting' | 'done'
