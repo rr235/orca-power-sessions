@@ -3,6 +3,16 @@ import { assert, mockHost, mount, test } from 'orca/testing'
 import { DEMO, DEMO_USAGE, DEMO_WORKTREES } from './fixtures'
 import * as panel from './panel'
 
+/** The pressable row holding the pin or unpin image named `alt`: an image's alt is not a label. */
+function pinControl(view: Awaited<ReturnType<typeof mount>>, alt: string) {
+  const image = view.findAll({ type: 'Image' }).find((i) => i.props.alt === alt)
+  if (!image) {
+    return null
+  }
+  const rows = view.findAll({ type: 'ListItem' }).filter((row) => image.path.startsWith(row.path))
+  return rows.sort((a, b) => b.path.length - a.path.length)[0] ?? null
+}
+
 test('shows servers, sessions and projects, and starts a server', async () => {
   const started: string[] = []
   const compacted: string[] = []
@@ -109,7 +119,8 @@ test('shows servers, sessions and projects, and starts a server', async () => {
     assert.deepEqual(host.refusals, [], 'Orca allows both, since each comes from a press')
     // Orca draws what it accepts: a dropped component or prop would show up as a warning.
     assert.ok(view.find({ type: 'Progress' }), 'context bar')
-    assert.ok(view.find({ type: 'Spinner' }), 'working spinner')
+    assert.equal(view.find({ type: 'Spinner' }), null, 'no spinner: an active status is a static dot')
+    assert.ok(view.find({ type: 'Text', text: 'active' }), 'the active status')
     assert.deepEqual(view.warnings, [])
     assert.deepEqual(view.refusals, [])
     await view.press(row('Onboarding checklist for new tenants'))
@@ -118,7 +129,7 @@ test('shows servers, sessions and projects, and starts a server', async () => {
     // The quick action closes every open card.
     await view.press(row('Onboarding checklist for new tenants'))
     assert.ok(view.find({ text: 'issue-212-onboarding' }), 'details open again')
-    await view.press(view.find({ label: 'Collapse all session details' }) as never)
+    await view.press(view.find({ label: 'Refresh sessions' }) as never)
     assert.equal(view.find({ text: 'issue-212-onboarding' }), null, 'the details close')
     // Before any compaction there is no since line, and the total turns take the colour, none up to 20.
     await view.press(row('Review search ranking change'))
@@ -168,6 +179,63 @@ test('shares open details with the panels of other workspaces through storage', 
     await view.press({ type: 'ListItem', text: /Onboarding checklist for new tenants/ })
     await view.press({ type: 'ListItem', text: /Review search ranking change/ })
     assert.deepEqual(host.data().storage.expanded, { p2: true }, 'each change is stored at once')
+  } finally {
+    await view.unmount()
+  }
+})
+
+test('pins a session above Sessions with its details open, and unpins it', async () => {
+  const host = mockHost({
+    requests: { 'overview.load': () => DEMO, 'session.usage': ({ keys }) => Object.fromEntries(keys.map((key) => [key, DEMO_USAGE[key]])), 'pr.info': () => ({}) }
+  })
+  const view = await mount(panel, { host })
+  const tabButtons = () => view.findAll({ type: 'IconButton', label: 'Show Onboarding checklist for new tenants tab' } as never)
+  try {
+    await view.settled()
+    assert.equal(view.find({ type: 'Text', text: 'Pinned' }), null, 'no Pinned area before a pin')
+    await view.press(pinControl(view, 'Pin Onboarding checklist for new tenants') as never)
+    await view.settled()
+    assert.deepEqual(host.data().storage.pinned, ['p1'], 'the pin is stored for every panel')
+    const title = view.find({ type: 'Text', text: 'Pinned' })
+    const sessions = view.find({ type: 'Text', text: 'Sessions' })
+    assert.ok(title && sessions && title.path < sessions.path, 'Pinned sits above Sessions')
+    assert.equal(tabButtons().length, 2, 'the session stays in its project too: two rows')
+    const tabs = tabButtons()
+    assert.ok(title && tabs[0].path > title.path && tabs[0].path < (sessions?.path ?? ''), 'one row in Pinned')
+    assert.ok(sessions && tabs[1].path > sessions.path, 'one row under Sessions')
+    assert.equal(pinControl(view, 'Pin Onboarding checklist for new tenants'), null)
+    const unpins = view.findAll({ type: 'Image' }).filter((i) => i.props.alt === 'Unpin Onboarding checklist for new tenants')
+    assert.equal(unpins.length, 2, 'both rows unpin')
+    assert.equal(view.findAll({ text: 'issue-212-onboarding' }).length, 1, 'one details card, in Pinned')
+    assert.ok(view.find({ text: 'issue-212-onboarding' }), 'its details show')
+    assert.ok(view.find({ text: /^Opus 5\.5,\s*High$/ }), 'with its numbers')
+    // The refresh button closes the list's details, not a pinned card.
+    await view.press(view.find({ label: 'Refresh sessions' }) as never)
+    assert.ok(view.find({ text: 'issue-212-onboarding' }), 'the pinned card stays')
+    await view.press(pinControl(view, 'Unpin Onboarding checklist for new tenants') as never)
+    await view.settled()
+    assert.deepEqual(host.data().storage.pinned, [])
+    assert.equal(view.find({ type: 'Text', text: 'Pinned' }), null, 'the Pinned area goes with the last pin')
+    assert.ok(pinControl(view, 'Pin Onboarding checklist for new tenants'), 'its project row pins again')
+    assert.equal(tabButtons().length, 1, 'one row, in its project')
+    assert.equal(view.find({ text: 'issue-212-onboarding' }), null, 'with its details closed')
+    assert.deepEqual(view.warnings, [])
+    assert.deepEqual(view.errors, [])
+  } finally {
+    await view.unmount()
+  }
+})
+
+test('shows pins another panel stored, and forgets pins of sessions that ended', async () => {
+  const host = mockHost({
+    requests: { 'overview.load': () => DEMO, 'session.usage': ({ keys }) => Object.fromEntries(keys.map((key) => [key, DEMO_USAGE[key]])), 'pr.info': () => ({}) },
+    storage: { pinned: ['gone', 'p2'] }
+  })
+  const view = await mount(panel, { host })
+  try {
+    await view.settled()
+    assert.ok(pinControl(view, 'Unpin Review search ranking change'), 'the stored pin shows')
+    assert.deepEqual(host.data().storage.pinned, ['p2'], 'the ended session is dropped')
   } finally {
     await view.unmount()
   }
@@ -318,7 +386,7 @@ test('edits, adds and deletes quick actions', async () => {
   const nameInput = () => view.find({ type: 'Input', label: 'Name' } as never)
   // Editing hides nothing: the sessions and the servers stay, under the same titles.
   const allInView = () => {
-    // Sessions is a plain title; Quick actions sit under it, at the bottom, under a header of the panel's own.
+    // Sessions and Quick actions each have a pressable header of the panel's own, Quick actions at the bottom.
     assert.equal(view.find({ type: 'Collapsible' }), null)
     const sessions = view.find({ type: 'Text', text: 'Sessions' })
     const quick = view.find({ type: 'Text', text: 'Quick actions' })
@@ -342,20 +410,30 @@ test('edits, adds and deletes quick actions', async () => {
     assert.ok(view.findAll({ type: 'Text', text: '●' }).some((d) => d.props.tone === 'success' && d.path > (header()?.path ?? '')), 'the dot stays while closed')
     await view.press(header() as never)
     allInView()
+    // Sessions opens and closes the same way; its refresh button stays while closed.
+    const sessionsHeader = () => view.find({ type: 'ListItem', text: /Sessions/ })
+    assert.equal(sessionsHeader()?.props.icon, 'expand', 'Sessions open: the arrow points down')
+    await view.press(sessionsHeader() as never)
+    assert.equal(sessionsHeader()?.props.icon, 'next', 'Sessions closed: the arrow points right')
+    assert.equal(view.find({ text: 'Onboarding checklist for new tenants' }), null, 'Sessions closed: no sessions')
+    assert.ok(view.find({ type: 'IconButton', label: 'Refresh sessions' }), 'the refresh button stays while closed')
+    assert.ok(view.find({ label: 'Run Primer' }), 'Quick actions stay while Sessions is closed')
+    await view.press(sessionsHeader() as never)
+    allInView()
     // Run comes first in a server's row.
     const run = view.find({ label: 'Run Primer' })
     const primerName = view.find({ type: 'Text', text: 'Primer' })
     assert.ok(run && primerName && run.path < primerName.path, 'Run comes before the name')
     const icons = view.findAll({ type: 'Image' }).length
-    // The Sessions title carries the smallest minus button, which closes every session's details.
-    const collapse = view.find({ type: 'IconButton', label: 'Collapse all session details' })
-    assert.equal(collapse?.props.icon, 'remove', 'a minus')
-    assert.equal(collapse?.props.size, 'xs')
+    // The Sessions title carries the smallest refresh button, which closes every session's details.
+    const refreshButton = view.find({ type: 'IconButton', label: 'Refresh sessions' })
+    assert.equal(refreshButton?.props.icon, 'refresh', 'a refresh icon')
+    assert.equal(refreshButton?.props.size, 'xs')
     // Add action sits under the servers, and opens its form right there.
     const addLine = view.find({ type: 'Text', text: 'Add action' })
     const lastServer = view.find({ label: 'Run Blog' })
     assert.ok(addLine && lastServer && lastServer.path < addLine.path, `Add action under the servers: ${lastServer?.path} ${addLine?.path}`)
-    // Styled like Collapse all session details: muted text, then its plus button.
+    // Styled like Refresh sessions: muted text, then its plus button.
     assert.equal(view.find({ type: 'IconButton', label: 'Add action' })?.props.icon, 'add')
     assert.equal(view.find({ type: 'Text', text: 'Add action' })?.props.muted, true)
     await view.press({ type: 'IconButton', label: 'Add action' })

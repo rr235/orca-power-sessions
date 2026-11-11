@@ -20,7 +20,6 @@ import {
   set,
   storage,
   Skeleton,
-  Spinner,
   Stack,
   Text,
   Textarea,
@@ -41,11 +40,15 @@ const SELECTED_HOLD_MS = 3000
 // The last overview, kept across panel runs so reopening shows it at once while it refreshes.
 const overview = atom<Overview | null>('overview', null, { persist: 'plugin', version: 6, migrate: () => null })
 // Which sections are open, kept across panel runs.
-const sections = atom('sections', { actions: true }, { persist: 'plugin' })
+const sections = atom<{ sessions?: boolean; actions: boolean }>('sections', { sessions: true, actions: true }, { persist: 'plugin' })
 // Sessions whose details are open, by session key. Orca runs a panel per workspace, and showing a
 // session can switch workspace, so each change goes to the plugin's storage at once and every panel
 // takes the others' changes from there.
 const EXPANDED_KEY = 'expanded'
+// Pinned sessions, by session key in the order they were pinned: their details stay open above
+// Sessions. Kept in the plugin's storage, which keeps every panel current.
+const PINNED_KEY = 'pinned'
+const pinned = atom<string[]>(PINNED_KEY, [], { persist: 'storage' })
 const expanded = atom<Record<string, true>>({})
 // Bumped by each change here and each storage read, so a read never undoes a newer change.
 let expandedEdits = 0
@@ -85,13 +88,17 @@ async function load(): Promise<void> {
     if (seq === loadSeq) {
       set(overview, next)
       set(loadError, null)
-      // Forget sessions that ended, then refresh the numbers of the open ones.
+      // Forget sessions that ended, then refresh the numbers of the open and pinned ones.
       const live = new Set(next.sessions.map((s) => s.key))
       const open = Object.keys(read(expanded)).filter((key) => live.has(key))
       if (open.length !== Object.keys(read(expanded)).length) {
         setExpanded(open)
       }
-      void loadUsage(open)
+      const pins = read(pinned).filter((key) => live.has(key))
+      if (pins.length !== read(pinned).length) {
+        set(pinned, pins)
+      }
+      void loadUsage([...new Set([...open, ...pins])])
     }
   } catch {
     if (seq === loadSeq) {
@@ -299,6 +306,9 @@ export function setup(ctx: PanelContext): () => void {
       if (key === EXPANDED_KEY) {
         void readExpanded()
       }
+      if (key === PINNED_KEY) {
+        void loadPinnedUsage()
+      }
     })
   )
   void readExpanded()
@@ -393,9 +403,12 @@ const DOT_PX = 16
 function StatusFact({ session }: { session: Session }) {
   const status = statusOf(session)
   const working = status.icon === 'working'
-  // Active spins, idle is the grey dot the session row shows; other states have their own icon.
+  // Active is the green dot and idle the grey one the session row shows, both static; other states
+  // have their own icon.
   const lead = working ? (
-    <Spinner label="active" labelHidden />
+    <Text size="xs" tone="success">
+      ●
+    </Text>
   ) : status.icon === 'idle' ? (
     <Text size="xs" muted>
       ●
@@ -529,6 +542,21 @@ function SessionRow({ session }: { session: Session }) {
   )
 }
 
+/** A pinned session: its row, then its details, always open, indented as in the list. */
+function PinnedSession({ session }: { session: Session }) {
+  return (
+    <Box gap="none">
+      <SessionLine session={session} inPinnedArea />
+      <Box direction="row" gap="none" minWidth={0}>
+        <Box width={DETAILS_INDENT_PX} minWidth={DETAILS_INDENT_PX} shrink={false} />
+        <Box grow minWidth={0}>
+          <SessionDetails session={session} />
+        </Box>
+      </Box>
+    </Box>
+  )
+}
+
 /** Opens these sessions' details and closes the rest, here and in every other panel. */
 function setExpanded(keys: string[]): void {
   expandedEdits += 1
@@ -580,19 +608,63 @@ function toggleDetails(key: string): void {
   }
 }
 
+/** Shows a session above Sessions with its details open; it stays in its project too, with its details there closed. */
+function pinSession(key: string): void {
+  update(pinned, (keys) => (keys.includes(key) ? keys : [...keys, key]))
+  if (read(expanded)[key]) {
+    setExpanded(Object.keys(read(expanded)).filter((k) => k !== key))
+  }
+  void loadUsage([key])
+}
+
+/** Reads the numbers of sessions another panel pinned, which this panel has none for yet. */
+async function loadPinnedUsage(): Promise<void> {
+  const stored = await storage.get(PINNED_KEY).catch(() => null)
+  const known = read(usage)
+  const loading = read(usageLoading)
+  const keys = Array.isArray(stored) ? stored.filter((key): key is string => typeof key === 'string' && !known[key] && !loading[key]) : []
+  void loadUsage(keys)
+}
+
+/** Whether Orca names the session's pane: only then does its key stay with it as others end. */
+const pinnable = (session: Session) => !session.key.startsWith(`${session.worktreeId}#`)
+
+/** Takes a session out of the Pinned area; it stays where it is in its project. */
+const unpinSession = (key: string) => update(pinned, (keys) => keys.filter((k) => k !== key))
+
+/**
+ * The drawn Lucide pin, or pin-off to unpin. Orca has no pin icon and its buttons hold only text,
+ * so a pressable ListItem holds the image, as a pull request's row does; the image's alt names it.
+ */
+function PinButton({ kind, session, onPress }: { kind: 'pin' | 'unpin'; session: Session; onPress: () => void }) {
+  const name = `${kind === 'pin' ? 'Pin' : 'Unpin'} ${session.title}`
+  return (
+    <Box shrink={false}>
+      <List>
+        <ListItem onPress={onPress}>
+          <Icon src={`assets/details/${kind}-${env.theme.colorScheme}.png`} alt={name} px={12} />
+        </ListItem>
+      </List>
+    </Box>
+  )
+}
+
 // How far an open details card sits in from its session's row, in pixels.
 const DETAILS_INDENT_PX = 16
 
-function SessionLine({ session }: { session: Session }) {
+function SessionLine({ session, inPinnedArea = false }: { session: Session; inPinnedArea?: boolean }) {
+  const isPinned = read(pinned).includes(session.key)
   return (
-    // The row toggles the details; the terminal button at the right shows the session's tab in Orca.
-    // The button stays beside the ListItem so controls are not nested.
+    // A list row toggles the details; in the Pinned area the details always show, so it does not press.
+    // At the right, the pin button (unpin for a pinned session, here and in its project), then the
+    // terminal button that shows the session's tab in Orca. The buttons stay beside the ListItem so
+    // controls are not nested.
     // Every row is one line that truncates. Only the title of the tab Orca shows is in normal text,
     // with no background.
     <Box direction="row" align="center" gap="none" minWidth={0}>
       <Box grow minWidth={0}>
         <List>
-          <ListItem onPress={() => toggleDetails(session.key)}>
+          <ListItem onPress={inPinnedArea ? undefined : () => toggleDetails(session.key)}>
             <Box direction="row" align="center" gap="xs" minWidth={0}>
               {session.agentIcon ? <Icon src={session.agentIcon} alt={session.agent ?? 'Agent'} px={11} /> : null}
               <Box grow minWidth={0}>
@@ -613,6 +685,11 @@ function SessionLine({ session }: { session: Session }) {
           </ListItem>
         </List>
       </Box>
+      {isPinned ? (
+        <PinButton kind="unpin" session={session} onPress={() => unpinSession(session.key)} />
+      ) : pinnable(session) ? (
+        <PinButton kind="pin" session={session} onPress={() => pinSession(session.key)} />
+      ) : null}
       <IconButton
         icon="terminal"
         label={`Show ${session.title} tab`}
@@ -814,6 +891,8 @@ function ActionForm({ id, servers, projects }: { id: string | null; servers: Ser
 }
 
 const toggleActions = () => update(sections, (s) => ({ ...s, actions: !s.actions }))
+// Sessions stored before it could close have no flag, and stay open.
+const toggleSessions = () => update(sections, (s) => ({ ...s, sessions: s.sessions === false }))
 
 export default function Panel() {
   const data = read(overview)
@@ -821,6 +900,9 @@ export default function Panel() {
   const failure = read(actionError)
   const open = read(sections)
   const form = read(editing)
+  const sessionsOpen = open.sessions !== false
+  const pins = read(pinned)
+  const pinnedSessions = data ? pins.flatMap((key) => data.sessions.filter((s) => s.key === key)) : []
   return (
     <Box height="100%" gap="sm">
       {error ? <Callout tone="danger">{error}</Callout> : null}
@@ -828,31 +910,71 @@ export default function Panel() {
       {!data ? (
         <Skeleton lines={6} label="Loading" />
       ) : (
-        <Box grow minHeight={0} gap="md">
-          {/* Sessions take the free space and scroll; Quick actions stay at the bottom. */}
-          <Box grow minHeight={0} gap="md">
-            {/* A plain title, since Sessions never collapses; its button closes every session's details and reads Orca again. */}
+        // One scrolling column: Pinned, Sessions and Quick actions follow each other at their own
+        // height, so nothing is cut off; a closed section takes only its header.
+        <Box grow minHeight={0} scroll="y" gap="md">
+          {/* Pinned sessions come first, each with its details open, in the order they were pinned.
+              A line divides them from Sessions. */}
+          {pinnedSessions.length ? (
+            <Box shrink={false} gap="md">
+              <Box shrink={false}>
+                <List>
+                  <ListItem>
+                    <Text weight="medium">Pinned</Text>
+                  </ListItem>
+                </List>
+              </Box>
+              <Box shrink={false}>
+                <Stack gap="md">
+                  {pinnedSessions.map((session) => (
+                    <PinnedSession key={session.key} session={session} />
+                  ))}
+                </Stack>
+              </Box>
+              <Box shrink={false}>
+                <Separator />
+              </Box>
+            </Box>
+          ) : null}
+          <Box shrink={false} gap="md">
+            {/* One pressable header like Quick actions': the arrow and the title open and close the
+                section together. Its refresh button closes every session's details and reads Orca again. */}
             <Box gap="none" shrink={false}>
               <Box direction="row" align="center" justify="between" gap="sm">
-                <Text weight="medium">Sessions</Text>
-                <IconButton icon="remove" label="Collapse all session details" size="xs" variant="ghost" onPress={refresh} />
+                <Box grow minWidth={0}>
+                  <List>
+                    <ListItem icon={sessionsOpen ? 'expand' : 'next'} onPress={toggleSessions}>
+                      <Text weight="medium">Sessions</Text>
+                    </ListItem>
+                  </List>
+                </Box>
+                <IconButton icon="refresh" label="Refresh sessions" size="xs" variant="ghost" onPress={refresh} />
               </Box>
-              <Text size="xs" muted>
-                All your sessions in one place, grouped by project.
-              </Text>
+              {/* The description starts where Quick actions' does. */}
+              <Box direction="row" gap="none" paddingX="xs">
+                <Box width={ICON_INSET_PX} minWidth={ICON_INSET_PX} shrink={false} />
+                <Box grow minWidth={0}>
+                  <Text size="xs" muted>
+                    All your sessions in one place, grouped by project.
+                  </Text>
+                </Box>
+              </Box>
             </Box>
-            <Box grow minHeight={0} scroll="y">
-              <Stack gap="md">
-                {groups(data.projects, data.sessions).map((group) => (
-                  <ProjectGroup key={group.key} group={group} />
-                ))}
-              </Stack>
-            </Box>
+            {sessionsOpen ? (
+              <Box shrink={false}>
+                <Stack gap="md">
+                  {groups(data.projects, data.sessions).map((group) => (
+                    <ProjectGroup key={group.key} group={group} />
+                  ))}
+                </Stack>
+              </Box>
+            ) : null}
           </Box>
-          {/* The column's md gap puts md above the line that divides Sessions from Quick actions. The
-              header is the panel's own, not a Collapsible, so it can carry a green dot while a server
-              runs, open or closed; its arrow points right when closed and down when open, as Orca's does. */}
-          <Box shrink={false} maxHeight="70%" gap="xs">
+          {/* Quick actions follow Sessions directly; the column's md gap puts md above the line that
+              divides them. The header is the panel's own, not a Collapsible, so it can carry a green dot
+              while a server runs, open or closed; its arrow points right when closed and down when open,
+              as Orca's does. */}
+          <Box shrink={false} gap="xs">
             <Box shrink={false}>
               <Separator />
             </Box>
@@ -885,7 +1007,7 @@ export default function Panel() {
               {open.actions ? <Box height={8} shrink={false} /> : null}
             </Box>
             {open.actions ? (
-              <Box minHeight={0} scroll="y">
+              <Box shrink={false}>
                 <Stack gap="md">
                   {data.servers.length ? (
                     // Inset by the header's own padding, so Run sits under its arrow and the names under its title.
