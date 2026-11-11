@@ -463,19 +463,14 @@ function SessionDetails({ session }: { session: Session }) {
           {stats?.turns ? <TurnsFact stats={stats} /> : null}
         </Box>
       )}
-      {/* The worktree, with its pull requests below it, set off from the usage by a rule; a long
+      {/* The branch, with its pull requests below it, set off from the usage by a rule; a long
           title truncates. */}
       <Separator />
       <Box gap="xs" minWidth={0}>
-        <Fact icon="worktree" alt="Worktree">
-          <Text size="xs" truncate>
-            {session.workspace || 'main'}
+        <Fact icon="branch" alt="Branch">
+          <Text size="xs" muted={!session.branch} truncate>
+            {session.branch ?? 'No branch'}
           </Text>
-          {session.branch && session.branch !== session.workspace ? (
-            <Text size="xs" muted truncate>
-              {`on ${session.branch}`}
-            </Text>
-          ) : null}
         </Fact>
         {session.prs.length ? (
           // Each pull request is one row that opens it in the default browser: the muted number and

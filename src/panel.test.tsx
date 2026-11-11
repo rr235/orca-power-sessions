@@ -46,7 +46,7 @@ test('shows servers, sessions and projects, and starts a server', async () => {
 
     // The details open under the session, with the transcript's numbers, and close again.
     assert.equal(view.find({ text: 'Opus 5.5' }), null)
-    assert.equal(view.find({ text: 'issue-212-onboarding' }), null, 'the worktree moved into the details')
+    assert.equal(view.find({ text: 'issue-212-onboarding' }), null, 'the branch moved into the details')
     // The row toggles details; the terminal button at the right shows the session's tab.
     const row = (title: string) => ({ type: 'ListItem', text: new RegExp(title) }) as const
     assert.equal(view.find({ type: 'IconButton', label: /details of/ }), null, 'no chevron')
@@ -214,6 +214,12 @@ test('groups a project\'s sessions by worktree when it has more than one', async
     const before = (title: string) => texts[texts.indexOf(title) - 1]
     assert.equal(before('Draft post layout'), 'main', 'a header even when only one worktree has sessions')
     assert.equal(before('Review search ranking change'), 'mountin-knowledge-base', 'a project with one worktree has no header')
+    // The details show the session's branch with the branch icon, not its worktree's name again.
+    await view.press({ type: 'ListItem', text: /Release notes for 0\.4/ })
+    assert.ok(view.find({ type: 'Text', text: 'release/0.4' }), 'the branch')
+    assert.ok(view.find({ type: 'Image', alt: 'Branch' } as never), 'the branch icon')
+    assert.equal(view.findAll({ type: 'Text', text: 'main' }).length, 2, 'the worktree name only in its header')
+    assert.equal(view.find({ type: 'Text', text: /^on / }), null)
     assert.deepEqual(view.warnings, [])
     assert.deepEqual(view.refusals, [])
   } finally {

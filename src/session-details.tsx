@@ -95,7 +95,7 @@ export function statusOf(session: Session): { label: string; icon: StatusIcon; l
   }
 }
 
-export type FactIcon = 'worktree' | `status-${Exclude<StatusIcon, 'working' | 'idle'>}`
+export type FactIcon = 'branch' | `status-${Exclude<StatusIcon, 'working' | 'idle'>}`
 
 /**
  * One row of the details: a small Lucide icon (or `lead`, such as a spinner), then its value. Every

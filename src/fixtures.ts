@@ -107,7 +107,7 @@ export const DEMO_WORKTREES: Overview = {
       agentIcon: 'assets/agents/codex.png',
       title: 'Release notes for 0.4',
       state: 'done',
-      branch: 'main',
+      branch: 'release/0.4',
       path: '/w/platform-main',
       tool: null,
       outcome: 'success',

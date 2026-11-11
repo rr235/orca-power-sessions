@@ -12,6 +12,7 @@ type Tone = 'muted' | 'success' | 'warning' | 'danger'
 /** Asset name -> Lucide icon name (lucide.dev/icons) and colour. */
 const ICONS: Record<string, { icon: string; tone: Tone }> = {
   worktree: { icon: 'folder-git-2', tone: 'muted' },
+  branch: { icon: 'git-branch', tone: 'muted' },
   project: { icon: 'zap', tone: 'muted' },
   'status-waiting': { icon: 'circle-pause', tone: 'warning' },
   'status-failed': { icon: 'circle-x', tone: 'danger' },
