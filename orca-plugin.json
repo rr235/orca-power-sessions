@@ -3,7 +3,7 @@
   "id": "power-sessions",
   "name": "Power Sessions",
   "version": "0.1.2",
-  "description": "On macOS, monitor Claude and Codex sessions across projects with status, model and effort, token and context usage, turns, tool calls, compactions, workspace branches and pull requests; highlight Fable and Astra models and long conversations, compact sessions between turns, and show their tabs. Quick actions run and stop your dev scripts, show their terminals and open their URLs.",
+  "description": "See what every Claude and Codex agent is doing and how much it has used, compact long chats, and run your dev scripts.",
   "author": {
     "name": "rr235",
     "url": "https://github.com/rr235"
