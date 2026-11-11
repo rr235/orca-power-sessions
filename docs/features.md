@@ -27,7 +27,7 @@ Usage appears where recorded by Claude, Codex or Orca.
 
 | Dark | Light |
 | --- | --- |
-| ![Session details with Fable 5.1 in the warning colour, dark theme](../assets/screenshots/session-details-fable-dark.png) | ![Session details with Fable 5.1 in the warning colour, light theme](../assets/screenshots/session-details-fable-light.png) |
+| ![Session details with Fable 5.2 in the warning colour, dark theme](../assets/screenshots/session-details-fable-dark.png) | ![Session details with Fable 5.2 in the warning colour, light theme](../assets/screenshots/session-details-fable-light.png) |
 
 ### Compact your sessions directly
 
@@ -37,7 +37,7 @@ Press **Compact** in a session's details to compact its conversation without swi
 
 | Dark | Light |
 | --- | --- |
-| ![The Compact button with its tooltip, Run /compact in this session, dark theme](../assets/screenshots/compact-dark.png) | ![The Compact button with its tooltip, Run /compact in this session, light theme](../assets/screenshots/compact-light.png) |
+| ![Session details with the Compact button beside the status, dark theme](../assets/screenshots/compact-dark.png) | ![Session details with the Compact button beside the status, light theme](../assets/screenshots/compact-light.png) |
 
 ### Quick actions
 

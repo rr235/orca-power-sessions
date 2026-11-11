@@ -18,22 +18,22 @@
   "screenshots": [
     {
       "path": "assets/plugin-page/1-sessions.png",
-      "alt": "The Sessions list in a dark theme: three projects with their Claude and Codex sessions, one marked with a green dot",
+      "alt": "The Sessions list in a dark theme: projects with their Claude and Codex sessions, two marked with a green dot, each with pin and terminal buttons",
       "caption": "Every Claude and Codex session, grouped by project. A green dot marks an agent that is working."
     },
     {
       "path": "assets/plugin-page/2-session-details.png",
-      "alt": "Session details in a light theme: idle, Opus 5.5 High, 153M tokens, a context bar at 275k of 400k, turn counts, a branch and four pull requests",
+      "alt": "Session details in a light theme: active, Opus 5.5 High, 3.4M tokens, a context bar at 182k of 1M, turn counts, a branch and two pull requests",
       "caption": "Status, model and effort, tokens, context, turns, tool calls, compactions, branch and pull requests."
     },
     {
       "path": "assets/plugin-page/3-status-and-warnings.png",
-      "alt": "Two session details in a dark theme: an active session with 27 turns in the warning colour, and an idle one with Fable 5.1 in the warning colour",
+      "alt": "Two session details in a dark theme: an active session with 27 turns in the warning colour, and an idle one with Fable 5.2 in the warning colour",
       "caption": "Fable and Astra model names and conversations above 20 turns show in the warning colour; above 35 turns, in red."
     },
     {
       "path": "assets/plugin-page/4-compact.png",
-      "alt": "Session details in a light theme with the Compact button and its tooltip, Run /compact in this session",
+      "alt": "Session details in a light theme: a failed session with the Compact button beside its status",
       "caption": "Compact a session in one press, without switching to it."
     },
     {
@@ -43,7 +43,7 @@
     },
     {
       "path": "assets/plugin-page/6-add-action.png",
-      "alt": "The Add new action form in a light theme, with a project, a name, the command bun run dev and an optional URL",
+      "alt": "The Add new action form in a light theme, with a project, a name, the command bun run docs:preview and an optional URL",
       "caption": "Save a script as a quick action: pick the project, then give it a name and a command."
     }
   ],
