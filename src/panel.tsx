@@ -13,7 +13,6 @@ import {
   on,
   plugin,
   read,
-  RelativeTime,
   Select,
   Separator,
   shell,
@@ -26,9 +25,9 @@ import {
   update,
   type PanelContext
 } from 'orca'
-import type { Overview, Project, QuickActionInput, PullRequest, PullRequestInfo, Server, Session, SessionUsage } from './protocol'
+import type { Overview, Project, QuickActionInput, PullRequestInfo, Server, Session, SessionUsage } from './protocol'
 import { normalUrl } from './url'
-import { AGENT_LABEL, ContextFact, Fact, Icon, ModelFact, statusOf, TurnsFact, type FactIcon } from './session-details'
+import { Icon, SessionDetails } from './session-details'
 
 const REFRESH_MS = 15000
 const EVENT_DELAY_MS = 400
@@ -191,7 +190,6 @@ const openProject = (project: Project) =>
   project.path
     ? act(`open:${project.id}`, () => plugin.request('project.open', { path: project.path as string }), `Could not open ${project.name}.`)
     : Promise.resolve()
-const openPullRequest = (pr: PullRequest) => void shell.openExternal(pr.url)
 /** Whether Orca's window shows this session's tab. A pane key starts with the id of its tab. */
 export const isSelected = (session: Session, shown: { worktreeId: string; tabId: string } | null) =>
   shown !== null && shown.worktreeId === session.worktreeId && shown.tabId === session.key.split(':')[0]
@@ -400,159 +398,29 @@ const ICON_INSET_PX = 7
 // The status dot's slot, in pixels, so every title ends at the same place.
 const DOT_PX = 16
 
-function StatusFact({ session }: { session: Session }) {
-  const status = statusOf(session)
-  const working = status.icon === 'working'
-  // Active is the green dot and idle the grey one the session row shows, both static; other states
-  // have their own icon.
-  const lead = working ? (
-    <Text size="xs" tone="success">
-      ●
-    </Text>
-  ) : status.icon === 'idle' ? (
-    <Text size="xs" muted>
-      ●
-    </Text>
-  ) : undefined
-  return (
-    <Box direction="row" align="center" gap="sm" minWidth={0}>
-      <Box grow minWidth={0}>
-        <Fact
-          icon={lead ? undefined : (`status-${status.icon}` as FactIcon)}
-          lead={lead}
-          alt="Status"
-        >
-          <Text size="xs">{status.label}</Text>
-        </Fact>
-      </Box>
-      {/* How long it has been in this state, just before Compact. */}
-      {session.since ? (
-        <Box shrink={false}>
-          <Text size="xs" muted>
-            <RelativeTime at={session.since} format={status.live ? 'duration' : 'short'} muted />
-          </Text>
-        </Box>
-      ) : null}
-      {/* Runs /compact in the session, at the far right; not while a turn runs, which Orca refuses for
-          a chat. */}
-      <Box shrink={false}>
-        <IconButton
-          icon="layers"
-          label="Compact"
-          variant="outline"
-          tone="accent"
-          size="xs"
-          disabled={session.state === 'working' || Boolean(read(busy)[`compact:${session.key}`])}
-          tooltip={session.state === 'working' ? 'Compact once this turn ends' : 'Run /compact in this session'}
-          onPress={() => void compactSession(session)}
-        />
-      </Box>
-    </Box>
-  )
-}
-
-/** What Orca and the agent's transcript say about a session, under its row while open. */
-function SessionDetails({ session }: { session: Session }) {
-  const stats = read(usage)[session.key]
-  const info = read(prInfo)
-  const titleLoading = read(prLoading)
-  // Only a Claude or Codex transcript has numbers to wait for, and only the first read shows
-  // skeletons: a refresh keeps the numbers already shown.
-  const pending = !stats && Boolean(read(usageLoading)[session.key]) && Boolean(session.agent && AGENT_LABEL[session.agent])
-  return (
-    <Box background="accent" radius="lg" padding="sm" gap="sm" margin="xs">
-      <StatusFact session={session} />
-      {pending ? (
-        // One line each for the model, the context and the turns.
-        <Box gap="xs">
-          <Skeleton lines={1} label="Loading model" />
-          <Skeleton lines={1} label="Loading context" />
-          <Skeleton lines={1} label="Loading turns" />
-        </Box>
-      ) : (
-        <Box gap="xs">
-          <ModelFact session={session} stats={stats} />
-          {stats?.context != null ? <ContextFact used={stats.context} window={stats.contextWindow} /> : null}
-          {stats?.turns ? <TurnsFact stats={stats} /> : null}
-        </Box>
-      )}
-      {/* The branch, with its pull requests below it, set off from the usage by a rule; a long
-          title truncates. */}
-      <Separator />
-      <Box gap="xs" minWidth={0}>
-        <Fact icon="branch" alt="Branch">
-          <Text size="xs" muted={!session.branch} truncate>
-            {session.branch ?? 'No branch'}
-          </Text>
-        </Fact>
-        {session.prs.length ? (
-          // Each pull request is one row that opens it in the default browser: the muted number and
-          // title, then a muted open-external icon at the far right. An IconButton cannot be muted and a
-          // Link holds only text, so the whole row is the press target.
-          <List>
-            {session.prs.map((pr) => {
-              const title = pr.title ?? info[pr.url]?.title
-              return (
-                <ListItem key={pr.url} onPress={() => openPullRequest(pr)}>
-                  <Box direction="row" align="center" gap="xs" minWidth={0}>
-                    <Box shrink={false}>
-                      <Text size="xs" muted>
-                        {`#${pr.number}`}
-                      </Text>
-                    </Box>
-                    <Box grow minWidth={0}>
-                      {title ? (
-                        <Text size="xs" muted truncate>
-                          {title}
-                        </Text>
-                      ) : titleLoading[pr.url] ? (
-                        <Skeleton lines={1} label="Loading title" />
-                      ) : null}
-                    </Box>
-                    <Box shrink={false}>
-                      <Icon src={`assets/details/open-external-${env.theme.colorScheme}.png`} alt="Open pull request" px={12} />
-                    </Box>
-                  </Box>
-                </ListItem>
-              )
-            })}
-          </List>
-        ) : null}
-      </Box>
-    </Box>
-  )
-}
-
-function SessionRow({ session }: { session: Session }) {
-  const isOpen = Boolean(read(expanded)[session.key])
+function SessionRow({ session, inPinnedArea = false }: { session: Session; inPinnedArea?: boolean }) {
+  const isOpen = inPinnedArea || Boolean(read(expanded)[session.key])
   return (
     <Box gap="none">
-      <SessionLine session={session} />
+      <SessionLine session={session} inPinnedArea={inPinnedArea} />
       {isOpen ? (
         <Box direction="row" gap="none" minWidth={0}>
           <Box width={DETAILS_INDENT_PX} minWidth={DETAILS_INDENT_PX} shrink={false} />
           <Box grow minWidth={0}>
-            <SessionDetails session={session} />
+            <SessionDetails
+              session={session}
+              stats={read(usage)[session.key]}
+              loading={Boolean(read(usageLoading)[session.key])}
+              info={read(prInfo)}
+              titleLoading={read(prLoading)}
+              compacting={Boolean(read(busy)[`compact:${session.key}`])}
+              onCompact={() => void compactSession(session)}
+            />
           </Box>
         </Box>
       ) : null}
       {/* A gap between an open card and the next session's title. */}
-      {isOpen ? <Box height={16} shrink={false} /> : null}
-    </Box>
-  )
-}
-
-/** A pinned session: its row, then its details, always open, indented as in the list. */
-function PinnedSession({ session }: { session: Session }) {
-  return (
-    <Box gap="none">
-      <SessionLine session={session} inPinnedArea />
-      <Box direction="row" gap="none" minWidth={0}>
-        <Box width={DETAILS_INDENT_PX} minWidth={DETAILS_INDENT_PX} shrink={false} />
-        <Box grow minWidth={0}>
-          <SessionDetails session={session} />
-        </Box>
-      </Box>
+      {isOpen && !inPinnedArea ? <Box height={16} shrink={false} /> : null}
     </Box>
   )
 }
@@ -927,7 +795,7 @@ export default function Panel() {
               <Box shrink={false}>
                 <Stack gap="md">
                   {pinnedSessions.map((session) => (
-                    <PinnedSession key={session.key} session={session} />
+                    <SessionRow key={session.key} session={session} inPinnedArea />
                   ))}
                 </Stack>
               </Box>

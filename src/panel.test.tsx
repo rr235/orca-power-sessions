@@ -1,5 +1,6 @@
 // `orca plugin test .` runs this in Node with the same runtime and checks Orca uses.
 import { assert, mockHost, mount, test } from 'orca/testing'
+import { storage } from 'orca'
 import { DEMO, DEMO_USAGE, DEMO_WORKTREES } from './fixtures'
 import * as panel from './panel'
 
@@ -226,9 +227,17 @@ test('pins a session above Sessions with its details open, and unpins it', async
   }
 })
 
-test('shows pins another panel stored, and forgets pins of sessions that ended', async () => {
+test('syncs ordered pins across panels, including while Sessions is closed', async () => {
+  const requested: string[] = []
   const host = mockHost({
-    requests: { 'overview.load': () => DEMO, 'session.usage': ({ keys }) => Object.fromEntries(keys.map((key) => [key, DEMO_USAGE[key]])), 'pr.info': () => ({}) },
+    requests: {
+      'overview.load': () => DEMO,
+      'session.usage': ({ keys }) => {
+        requested.push(...keys)
+        return Object.fromEntries(keys.map((key) => [key, DEMO_USAGE[key]]))
+      },
+      'pr.info': () => ({})
+    },
     storage: { pinned: ['gone', 'p2'] }
   })
   const view = await mount(panel, { host })
@@ -236,6 +245,21 @@ test('shows pins another panel stored, and forgets pins of sessions that ended',
     await view.settled()
     assert.ok(pinControl(view, 'Unpin Review search ranking change'), 'the stored pin shows')
     assert.deepEqual(host.data().storage.pinned, ['p2'], 'the ended session is dropped')
+    await view.press(pinControl(view, 'Pin Onboarding checklist for new tenants') as never)
+    assert.deepEqual(host.data().storage.pinned, ['p2', 'p1'], 'several pins keep the order pinned')
+    await view.press({ type: 'ListItem', text: /^Sessions$/ })
+    assert.equal(view.persisted.plugin.sections.sessions, false, 'the closed section is remembered')
+    assert.ok(view.find({ text: 'issue-212-onboarding' }), 'pinned details stay open with Sessions closed')
+    const pins = view.findAll({ type: 'Image' }).filter((item) => String(item.props.alt).startsWith('Unpin '))
+    assert.deepEqual(pins.map((item) => item.props.alt), ['Unpin Review search ranking change', 'Unpin Onboarding checklist for new tenants'])
+    // A storage write from another panel goes through Orca's real storage synchronization.
+    await storage.set('pinned', ['p3'])
+    await view.settled()
+    assert.ok(pinControl(view, 'Unpin Draft post layout'), 'a new remote pin appears')
+    assert.equal(view.find({ text: 'issue-212-onboarding' }), null, 'a remote unpin removes its card')
+    assert.ok(requested.includes('p3'), 'the remote pin requests its usage')
+    assert.equal(view.find({ type: 'Skeleton', label: 'Loading model' }), null, 'the remote pin finishes loading its usage')
+    assert.deepEqual(view.errors, [])
   } finally {
     await view.unmount()
   }

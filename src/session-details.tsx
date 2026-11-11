@@ -1,6 +1,6 @@
 // Shared session formatting and detail rows, used by the Power Sessions panel.
-import { Box, Button, env, Image, Progress, Text } from 'orca'
-import type { Session, SessionUsage, TokenSplit } from './protocol'
+import { Box, Button, env, IconButton, Image, List, ListItem, Progress, RelativeTime, Separator, shell, Skeleton, Text } from 'orca'
+import type { PullRequestInfo, Session, SessionUsage, TokenSplit } from './protocol'
 
 /** A plugin image `px` wide: Orca's smallest Image is 48px, but it never grows past its box. */
 export function Icon({ src, alt = '', px, rounded }: { src: string; alt?: string; px: number; rounded?: boolean }) {
@@ -98,7 +98,7 @@ export function statusOf(session: Session): { label: string; icon: StatusIcon; l
 export type FactIcon = 'branch' | `status-${Exclude<StatusIcon, 'working' | 'idle'>}`
 
 /**
- * One row of the details: a small Lucide icon (or `lead`, such as a spinner), then its value. Every
+ * One row of the details: a small Lucide icon (or `lead`, such as a status dot), then its value. Every
  * row has this shape and the same spacing. Orca's own icons have one size, so `bun scripts/icons.ts`
  * draws these as PNGs, one per colour scheme.
  */
@@ -215,6 +215,136 @@ export function TurnsFact({ stats }: { stats: SessionUsage }) {
           </Text>
         ) : null}
       </Text>
+    </Box>
+  )
+}
+
+type SessionDetailsProps = {
+  session: Session
+  stats: SessionUsage | undefined
+  loading: boolean
+  info: Record<string, PullRequestInfo>
+  titleLoading: Record<string, boolean>
+  compacting: boolean
+  onCompact: () => void
+}
+
+function StatusFact({ session, compacting, onCompact }: Pick<SessionDetailsProps, 'session' | 'compacting' | 'onCompact'>) {
+  const status = statusOf(session)
+  const working = status.icon === 'working'
+  // Active is the green dot and idle the grey one the session row shows, both static; other states
+  // have their own icon.
+  const lead = working ? (
+    <Text size="xs" tone="success">
+      ●
+    </Text>
+  ) : status.icon === 'idle' ? (
+    <Text size="xs" muted>
+      ●
+    </Text>
+  ) : undefined
+  return (
+    <Box direction="row" align="center" gap="sm" minWidth={0}>
+      <Box grow minWidth={0}>
+        <Fact
+          icon={lead ? undefined : (`status-${status.icon}` as FactIcon)}
+          lead={lead}
+          alt="Status"
+        >
+          <Text size="xs">{status.label}</Text>
+        </Fact>
+      </Box>
+      {/* How long it has been in this state, just before Compact. */}
+      {session.since ? (
+        <Box shrink={false}>
+          <Text size="xs" muted>
+            <RelativeTime at={session.since} format={status.live ? 'duration' : 'short'} muted />
+          </Text>
+        </Box>
+      ) : null}
+      {/* Runs /compact in the session, at the far right; not while a turn runs, which Orca refuses for
+          a chat. */}
+      <Box shrink={false}>
+        <IconButton
+          icon="layers"
+          label="Compact"
+          variant="outline"
+          tone="accent"
+          size="xs"
+          disabled={session.state === 'working' || compacting}
+          tooltip={session.state === 'working' ? 'Compact once this turn ends' : 'Run /compact in this session'}
+          onPress={onCompact}
+        />
+      </Box>
+    </Box>
+  )
+}
+
+/** What Orca and the agent's transcript say about a session, under its row while open. */
+export function SessionDetails({ session, stats, loading, info, titleLoading, compacting, onCompact }: SessionDetailsProps) {
+  // Only a Claude or Codex transcript has numbers to wait for, and only the first read shows
+  // skeletons: a refresh keeps the numbers already shown.
+  const pending = !stats && loading && Boolean(session.agent && AGENT_LABEL[session.agent])
+  return (
+    <Box background="accent" radius="lg" padding="sm" gap="sm" margin="xs">
+      <StatusFact session={session} compacting={compacting} onCompact={onCompact} />
+      {pending ? (
+        // One line each for the model, the context and the turns.
+        <Box gap="xs">
+          <Skeleton lines={1} label="Loading model" />
+          <Skeleton lines={1} label="Loading context" />
+          <Skeleton lines={1} label="Loading turns" />
+        </Box>
+      ) : (
+        <Box gap="xs">
+          <ModelFact session={session} stats={stats} />
+          {stats?.context != null ? <ContextFact used={stats.context} window={stats.contextWindow} /> : null}
+          {stats?.turns ? <TurnsFact stats={stats} /> : null}
+        </Box>
+      )}
+      {/* The branch, with its pull requests below it, set off from the usage by a rule; a long
+          title truncates. */}
+      <Separator />
+      <Box gap="xs" minWidth={0}>
+        <Fact icon="branch" alt="Branch">
+          <Text size="xs" muted={!session.branch} truncate>
+            {session.branch ?? 'No branch'}
+          </Text>
+        </Fact>
+        {session.prs.length ? (
+          // Each pull request is one row that opens it in the default browser: the muted number and
+          // title, then a muted open-external icon at the far right. An IconButton cannot be muted and a
+          // Link holds only text, so the whole row is the press target.
+          <List>
+            {session.prs.map((pr) => {
+              const title = pr.title ?? info[pr.url]?.title
+              return (
+                <ListItem key={pr.url} onPress={() => void shell.openExternal(pr.url)}>
+                  <Box direction="row" align="center" gap="xs" minWidth={0}>
+                    <Box shrink={false}>
+                      <Text size="xs" muted>
+                        {`#${pr.number}`}
+                      </Text>
+                    </Box>
+                    <Box grow minWidth={0}>
+                      {title ? (
+                        <Text size="xs" muted truncate>
+                          {title}
+                        </Text>
+                      ) : titleLoading[pr.url] ? (
+                        <Skeleton lines={1} label="Loading title" />
+                      ) : null}
+                    </Box>
+                    <Box shrink={false}>
+                      <Icon src={`assets/details/open-external-${env.theme.colorScheme}.png`} alt="Open pull request" px={12} />
+                    </Box>
+                  </Box>
+                </ListItem>
+              )
+            })}
+          </List>
+        ) : null}
+      </Box>
     </Box>
   )
 }
