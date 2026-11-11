@@ -1,6 +1,6 @@
 // `orca plugin test .` runs this in Node with the same runtime and checks Orca uses.
 import { assert, mockHost, mount, test } from 'orca/testing'
-import { DEMO, DEMO_USAGE } from './fixtures'
+import { DEMO, DEMO_USAGE, DEMO_WORKTREES } from './fixtures'
 import * as panel from './panel'
 
 test('shows servers, sessions and projects, and starts a server', async () => {
@@ -187,6 +187,35 @@ test('opens a project when its name is pressed', async () => {
   try {
     await view.press({ type: 'ListItem', text: /Planner$/ })
     assert.deepEqual(opened, ['/w/planner'], 'the project row opens its main checkout')
+  } finally {
+    await view.unmount()
+  }
+})
+
+test('groups a project\'s sessions by worktree when it has more than one', async () => {
+  assert.deepEqual(
+    panel.byWorktree(DEMO_WORKTREES.sessions.filter((s) => s.projectId === 'github:mountin-io/platform')).map((w) => [w.name, w.sessions.map((s) => s.key)]),
+    [
+      ['issue-212-onboarding', ['p1', 'p5']],
+      ['main', ['p4']]
+    ],
+    'in the order of each worktree\'s first session'
+  )
+  const host = mockHost({ requests: { 'overview.load': () => DEMO_WORKTREES, 'session.usage': () => ({}) } })
+  const view = await mount(panel, { host })
+  try {
+    // Paths hold keys, so the order on screen is the order findAll returns.
+    const texts = view.findAll({ type: 'Text' }).map((node) => node.text)
+    const order = ['issue-212-onboarding', 'Onboarding checklist for new tenants', 'Review onboarding copy', 'main', 'Release notes for 0.4', 'Planner']
+    // From the Platform project, which follows Personal Blog's session.
+    const platform = texts.slice(texts.indexOf('Draft post layout'))
+    assert.deepEqual(platform.filter((text) => order.includes(text as string)), order,'a header per worktree with sessions, its sessions under it')
+    // Personal Blog has two worktrees with a session in one; the session outside every project has one.
+    const before = (title: string) => texts[texts.indexOf(title) - 1]
+    assert.equal(before('Draft post layout'), 'main', 'a header even when only one worktree has sessions')
+    assert.equal(before('Review search ranking change'), 'mountin-knowledge-base', 'a project with one worktree has no header')
+    assert.deepEqual(view.warnings, [])
+    assert.deepEqual(view.refusals, [])
   } finally {
     await view.unmount()
   }

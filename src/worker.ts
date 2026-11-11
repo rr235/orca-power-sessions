@@ -137,7 +137,7 @@ export default function activate(orca: OrcaWorkerApi): void {
     const parsed = parseSessions(psJson, projectsJson)
     // In the order of Orca's sidebar.
     const sessions = orderLikeSidebar(parsed, workspaceRanks(psJson), await tabPositions(parsed.map((s) => s.key.split(':')[0])))
-    const projectList = parseProjects(projectsJson, reposJson, sessions)
+    const projectList = parseProjects(projectsJson, reposJson, sessions, psJson)
     let list = await change((current) => linkProjects(current, projectList))
     const terminals = liveTerminals(list, terminalsJson, known)
     list = await learnUrls(list, terminals)

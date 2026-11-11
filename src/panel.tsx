@@ -39,7 +39,7 @@ const SELECTED_MS = 1000
 const SELECTED_HOLD_MS = 3000
 
 // The last overview, kept across panel runs so reopening shows it at once while it refreshes.
-const overview = atom<Overview | null>('overview', null, { persist: 'plugin', version: 5, migrate: () => null })
+const overview = atom<Overview | null>('overview', null, { persist: 'plugin', version: 6, migrate: () => null })
 // Which sections are open, kept across panel runs.
 const sections = atom('sections', { actions: true }, { persist: 'plugin' })
 // Sessions whose details are open, by session key. Orca runs a panel per workspace, and showing a
@@ -669,11 +669,59 @@ function ProjectGroup({ group }: { group: Group }) {
       </List>
       {group.sessions.length ? (
         <Box gap="none" paddingX="md">
-          {group.sessions.map((session) => (
+          {worktreeGrouped(group)
+            ? byWorktree(group.sessions).map((worktree) => <WorktreeGroup key={worktree.key} worktree={worktree} />)
+            : group.sessions.map((session) => <SessionRow key={session.key} session={session} />)}
+        </Box>
+      ) : null}
+    </Box>
+  )
+}
+
+type Worktree = { key: string; name: string; sessions: Session[] }
+
+/** A project's sessions by workspace, in the order their first session comes. */
+export function byWorktree(sessions: Session[]): Worktree[] {
+  const worktrees = new Map<string, Worktree>()
+  for (const session of sessions) {
+    const worktree = worktrees.get(session.worktreeId) ?? { key: session.worktreeId, name: session.workspace || 'main', sessions: [] }
+    worktree.sessions.push(session)
+    worktrees.set(session.worktreeId, worktree)
+  }
+  return [...worktrees.values()]
+}
+
+/** Whether a project's sessions sit under their worktree: when the project has more than one. */
+const worktreeGrouped = (group: Group) =>
+  (group.project?.worktrees ?? 0) > 1 || new Set(group.sessions.map((s) => s.worktreeId)).size > 1
+
+// How far a worktree's sessions sit in from its name, in pixels.
+const WORKTREE_INDENT_PX = 12
+
+function WorktreeGroup({ worktree }: { worktree: Worktree }) {
+  return (
+    <Box gap="none">
+      {/* A label, not a control: a ListItem without a press, so its icon lines up with the sessions'. */}
+      <List>
+        <ListItem>
+          <Box direction="row" align="center" gap="xs" minWidth={0}>
+            <Icon src={`assets/details/worktree-${env.theme.colorScheme}.png`} alt="Worktree" px={11} />
+            <Box grow minWidth={0}>
+              <Text size="xs" muted truncate>
+                {worktree.name}
+              </Text>
+            </Box>
+          </Box>
+        </ListItem>
+      </List>
+      <Box direction="row" gap="none" minWidth={0}>
+        <Box width={WORKTREE_INDENT_PX} minWidth={WORKTREE_INDENT_PX} shrink={false} />
+        <Box grow minWidth={0}>
+          {worktree.sessions.map((session) => (
             <SessionRow key={session.key} session={session} />
           ))}
         </Box>
-      ) : null}
+      </Box>
     </Box>
   )
 }

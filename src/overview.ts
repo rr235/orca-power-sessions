@@ -183,10 +183,14 @@ export function orderLikeSidebar(sessions: Session[], ranks: Map<string, number>
     .map(({ session }) => session)
 }
 
-/** Orca projects with their main checkout and live agent count, in Orca's sidebar order. */
-export function parseProjects(projectsJson: string, reposJson: string, sessions: Session[]): Project[] {
+/**
+ * Orca projects with their main checkout, live agent count and workspace count (from `orca
+ * worktree ps --json`, 0 without it), in Orca's sidebar order.
+ */
+export function parseProjects(projectsJson: string, reposJson: string, sessions: Session[], psJson = '{}'): Project[] {
   const projects = result<{ projects?: ProjectRow[] }>(projectsJson).projects ?? []
   const paths = new Map((result<{ repos?: RepoRow[] }>(reposJson).repos ?? []).map((repo) => [repo.id, repo.path]))
+  const rows = (result<{ worktrees?: PsRow[] }>(psJson).worktrees ?? []).filter((row) => row.worktreeId)
   return projects
     .flatMap((project): Project[] => {
       const name = project.displayName?.trim()
@@ -201,7 +205,8 @@ export function parseProjects(projectsJson: string, reposJson: string, sessions:
           name,
           repo: owner && repo ? `${owner}/${repo}` : '',
           path: (repoId && paths.get(repoId)) || null,
-          agents: sessions.filter((s) => s.projectId === project.id).length
+          agents: sessions.filter((s) => s.projectId === project.id).length,
+          worktrees: rows.filter((row) => row.repoId && project.sourceRepoIds?.includes(row.repoId)).length
         }
       ]
     })
