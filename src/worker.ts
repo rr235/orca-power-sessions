@@ -255,7 +255,7 @@ export default function activate(orca: OrcaWorkerApi): void {
     }
     return null
   })
-  orca.panels.handle('session.selected', () => selectedTab(orca))
+  orca.panels.handle('session.selected', () => selectedTab())
   orca.panels.handle('session.focus', async ({ key, path }) => {
     // Orca focuses a tab only in the workspace on screen, so show the workspace first.
     await run('orca', ['worktree', 'activate', '--worktree', `path:${path}`, '--json'])
