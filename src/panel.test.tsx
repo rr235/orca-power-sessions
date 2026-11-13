@@ -65,6 +65,10 @@ test('shows servers, sessions and projects, and starts a server', async () => {
     const title = (text: string) => view.find({ type: 'Text', text })?.props.muted
     assert.equal(title('Review search ranking change'), false, 'the tab Orca shows')
     assert.equal(title('Draft post layout'), true, 'a tab Orca does not show')
+    // The workspace Orca shows names its project in normal text, here the group outside every project.
+    const project = (text: string) => view.findAll({ type: 'Text', text }).find((n) => n.props.size === 'sm')?.props.muted
+    assert.equal(project('mountin-knowledge-base'), false, 'the project Orca shows')
+    assert.equal(project('Platform'), true, 'a project Orca does not show')
     await view.press({ type: 'ListItem', text: /Onboarding checklist for new tenants/ })
     assert.deepEqual(focused, [], 'pressing the title leaves Orca on its tab')
     assert.ok(view.find({ text: /^Opus 5\.5,\s*High$/ }), 'pressing the title opens the details')
@@ -77,6 +81,8 @@ test('shows servers, sessions and projects, and starts a server', async () => {
     await view.press(tab as never)
     assert.deepEqual(focused, ['p1 /w/platform'], 'the terminal button shows its tab in Orca')
     assert.equal(title('Review search ranking change'), true, 'the pressed session is the one shown now')
+    assert.equal(project('Platform'), false, 'and its project')
+    assert.equal(project('mountin-knowledge-base'), true)
     await view.press({ type: 'ListItem', text: /Onboarding checklist for new tenants/ })
     assert.equal(view.find({ text: /^Opus 5\.5,\s*High$/ }), null, 'pressing the title again closes the details')
     await view.press({ type: 'ListItem', text: /Onboarding checklist for new tenants/ })
@@ -286,6 +292,18 @@ test('opens a project when its name is pressed', async () => {
   }
 })
 
+test('matches the tab Orca shows to a chat or terminal session', () => {
+  const session = (key: string) => ({ ...DEMO.sessions[0], key, worktreeId: 'r1::/w' })
+  const chat = session('structured-agent-session-claude_abc:leaf-1')
+  const terminal = session('tab-1:leaf-1')
+  const shown = (tabId: string | null, worktreeId = 'r1::/w') => ({ worktreeId, tabId })
+  assert.equal(panel.isSelected(chat, shown('agent-session:claude_abc')), true)
+  assert.equal(panel.isSelected(terminal, shown('tab-1')), true)
+  assert.equal(panel.isSelected(terminal, shown('tab-1', 'r2::/w')), false, 'the same tab id in another workspace')
+  assert.equal(panel.isSelected(terminal, shown(null)), false, 'a file or browser tab')
+  assert.equal(panel.isSelected(terminal, null), false)
+})
+
 test('groups a project\'s sessions by worktree when it has more than one', async () => {
   assert.deepEqual(
     panel.byWorktree(DEMO_WORKTREES.sessions.filter((s) => s.projectId === 'github:mountin-io/platform')).map((w) => [w.name, w.sessions.map((s) => s.key)]),
@@ -295,9 +313,24 @@ test('groups a project\'s sessions by worktree when it has more than one', async
     ],
     'in the order of each worktree\'s first session'
   )
-  const host = mockHost({ requests: { 'overview.load': () => DEMO_WORKTREES, 'session.usage': () => ({}) } })
+  // Orca shows a file in Platform's main checkout: its project and worktree names are in normal
+  // text, and no session's title is.
+  const host = mockHost({
+    requests: {
+      'overview.load': () => DEMO_WORKTREES,
+      'session.usage': () => ({}),
+      'session.selected': () => ({ worktreeId: 'r1::/w/platform-main', tabId: null })
+    }
+  })
   const view = await mount(panel, { host })
   try {
+    await view.settled()
+    const muted = (text: string, size = 'xs') => view.findAll({ type: 'Text', text }).filter((n) => n.props.size === size).map((n) => n.props.muted)
+    assert.deepEqual(muted('Platform', 'sm'), [false], 'the project Orca shows')
+    assert.deepEqual(muted('Personal Blog', 'sm'), [true])
+    assert.deepEqual(muted('main'), [true, false], 'the main of Personal Blog, then the main checkout Orca shows')
+    assert.deepEqual(muted('issue-212-onboarding'), [true])
+    assert.deepEqual(muted('Release notes for 0.4'), [true], 'a file, not the session, is on screen')
     // Paths hold keys, so the order on screen is the order findAll returns.
     const texts = view.findAll({ type: 'Text' }).map((node) => node.text)
     const order = ['issue-212-onboarding', 'Onboarding checklist for new tenants', 'Review onboarding copy', 'main', 'Release notes for 0.4', 'Planner']

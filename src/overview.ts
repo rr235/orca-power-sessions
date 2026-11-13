@@ -205,6 +205,7 @@ export function parseProjects(projectsJson: string, reposJson: string, sessions:
           name,
           repo: owner && repo ? `${owner}/${repo}` : '',
           path: (repoId && paths.get(repoId)) || null,
+          repoIds: project.sourceRepoIds ?? [],
           agents: sessions.filter((s) => s.projectId === project.id).length,
           worktrees: rows.filter((row) => row.repoId && project.sourceRepoIds?.includes(row.repoId)).length
         }

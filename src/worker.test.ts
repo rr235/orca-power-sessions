@@ -4,7 +4,7 @@ import type { Project, QuickAction } from './protocol'
 import { linkProjects, portOf, printedUrl, saveAction, storedActions, terminalTail, terminalTitle } from './servers'
 import { handleOf } from './worker'
 import { compactProblem, operationId, payloadFingerprint } from './chats'
-import { focusProblem } from './tabs'
+import { focusProblem, selectedOf } from './tabs'
 import { tabOfPane } from './overview'
 
 test('finds the tab of a session and reads the focus answer', () => {
@@ -15,6 +15,17 @@ test('finds the tab of a session and reads the focus answer', () => {
   assert.equal(focusProblem(JSON.stringify({ error: { code: 'runtime_error', message: 'tab_not_found' } })), 'Orca has no open tab for this session.')
   assert.equal(focusProblem(JSON.stringify({ error: { code: 'method_not_found', message: 'x' } })), 'This Orca build cannot focus a tab from a plugin.')
   assert.equal(focusProblem(''), 'Orca gave no readable answer.')
+})
+
+test('reads the focused workspace and the tab Orca shows in it', () => {
+  // The runtime names a terminal tab by tab and leaf, a chat by its session; other tabs match no session.
+  const answer = (activeTabId: string | null) => JSON.stringify({ worktree: 'r1::/c/kb', activeTabId })
+  assert.deepEqual(selectedOf(answer('tab-1::leaf-1')), { worktreeId: 'r1::/c/kb', tabId: 'tab-1' })
+  assert.deepEqual(selectedOf(answer('agent-session:claude_abc')), { worktreeId: 'r1::/c/kb', tabId: 'agent-session:claude_abc' })
+  assert.deepEqual(selectedOf(answer(null)), { worktreeId: 'r1::/c/kb', tabId: null })
+  assert.equal(selectedOf('null'), null, 'no workspace is focused')
+  assert.equal(selectedOf(JSON.stringify({ error: { code: 'method_not_found', message: 'x' } })), null)
+  assert.equal(selectedOf(''), null)
 })
 
 test('signs a chat compact the way Orca does, and reads its answer', () => {
@@ -114,10 +125,10 @@ test('lists projects in Orca order with paths, live agent and worktree counts', 
   })
   const projects = parseProjects(PROJECTS, REPOS, parseSessions(PS, PROJECTS), ps)
   assert.deepEqual(
-    projects.map((p) => [p.name, p.path, p.agents, p.worktrees]),
+    projects.map((p) => [p.name, p.path, p.repoIds, p.agents, p.worktrees]),
     [
-      ['Personal Blog', '/c/blog', 2, 2],
-      ['Acme', null, 1, 1]
+      ['Personal Blog', '/c/blog', ['r-blog'], 2, 2],
+      ['Acme', null, ['r-x'], 1, 1]
     ]
   )
 })
@@ -151,9 +162,9 @@ test('finds the address a dev server printed, preferring its Local line', () => 
 })
 
 const PROJECT_LIST: Project[] = [
-  { id: 'p-web', name: 'Web', repo: 'o/web', path: '/c/web', agents: 0, worktrees: 1 },
-  { id: 'p-api', name: 'API', repo: 'o/api', path: '/c/api', agents: 0, worktrees: 1 },
-  { id: 'p-cloud', name: 'Cloud only', repo: 'o/cloud', path: null, agents: 0, worktrees: 1 }
+  { id: 'p-web', name: 'Web', repo: 'o/web', path: '/c/web', repoIds: [], agents: 0, worktrees: 1 },
+  { id: 'p-api', name: 'API', repo: 'o/api', path: '/c/api', repoIds: [], agents: 0, worktrees: 1 },
+  { id: 'p-cloud', name: 'Cloud only', repo: 'o/cloud', path: null, repoIds: [], agents: 0, worktrees: 1 }
 ]
 const WEB: QuickAction = { id: 'web', name: 'Web', command: 'bun run dev', projectId: null, path: '/c/web', url: 'http://localhost:3000' }
 
