@@ -3,7 +3,18 @@ import { orderLikeSidebar, parseProjects, parseSessions, terminalAlive, terminal
 import type { Project, QuickAction } from './protocol'
 import { linkProjects, portOf, printedUrl, saveAction, storedActions, terminalTail, terminalTitle } from './servers'
 import { handleOf } from './worker'
-import { compactProblem, operationId, payloadFingerprint } from './chats'
+import { compactProblem, operationId, payloadFingerprint, runFailure, runtimeClientPath } from './chats'
+
+test('finds Orca\'s runtime client in its new or old place, and says briefly why a run failed', () => {
+  const has = (...paths: string[]) => (path: string) => paths.includes(path)
+  assert.equal(runtimeClientPath('/u', has('/u/out/cli/runtime/client.js', '/u/out/cli/runtime-client.js')), '/u/out/cli/runtime/client.js', 'the new place first')
+  assert.equal(runtimeClientPath('/u', has('/u/out/cli/runtime-client.js')), '/u/out/cli/runtime-client.js', 'an older Orca')
+  assert.throws(() => runtimeClientPath('/u', has()), /runtime client somewhere the plugin does not know/)
+  const stderr = "node:internal/modules/cjs/loader:1575\n  throw err;\n  ^\n\nError: Cannot find module '/x/client.js'\nRequire stack:\n- /[eval]"
+  assert.equal(runFailure(stderr, new Error('Command failed: Orca -e const [request] = ...')), "Orca's runtime could not run the request: Error: Cannot find module '/x/client.js'.")
+  assert.equal(runFailure('', Object.assign(new Error('x'), { killed: true })), "Orca's runtime could not run the request: it timed out.")
+  assert.equal(runFailure('', new Error('x')), "Orca's runtime could not run the request: it exited without an answer.")
+})
 import { focusProblem, selectedOf } from './tabs'
 import { tabOfPane } from './overview'
 
