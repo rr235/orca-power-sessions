@@ -1,14 +1,10 @@
-// Brings an agent session's tab to the front of Orca's window, and reads which tab it shows. Orca
-// has no CLI command or plugin method for either, so the worker calls the RPC Orca's paired clients
-// use, `session.tabs.activate`, through Orca's runtime client (see chats.ts), and reads the window
-// state Orca saves. These are Orca internals, not a published API: an Orca update can change them,
-// and the error then says so.
-import { readFile } from 'node:fs/promises'
-import { homedir } from 'node:os'
-import { join } from 'node:path'
+// Brings an agent session's tab to the front of Orca's window, and reads which tab it shows. The
+// live `worktree.ps` identifies the focused workspace. Orca has no CLI command or plugin method
+// for a tab, so the worker calls `session.tabs.activate` and `session.tabs.list` through Orca's
+// runtime client (see chats.ts). These are Orca internals and can change between releases.
 import { runInOrca } from './chats'
-import { run } from './cli'
 import { tabOfPane } from './overview'
+import type { Selected } from './protocol'
 
 const METHOD = 'session.tabs.activate'
 const TIMEOUT_MS = 15000
@@ -62,39 +58,53 @@ export async function focusTab(path: string, paneKey: string): Promise<void> {
   }
 }
 
-const ORCA_DATA = join(homedir(), 'Library', 'Application Support', 'orca')
+const LIST_METHOD = 'session.tabs.list'
+const LIST_TIMEOUT_MS = 4000
 
-/** What Orca's window shows: its workspace and that workspace's selected tab. */
-export type Selected = { worktreeId: string; tabId: string }
-
-/** The workspace and tab in Orca's saved window state (`payload` of its `workspaceSession` row). */
-export function selectedOf(payload: string): Selected | null {
+const LIST_SCRIPT = `
+const [request] = process.argv.slice(1)
+const { client: clientPath } = JSON.parse(request)
+const { RuntimeClient } = require(clientPath)
+;(async () => {
   try {
-    const state = JSON.parse(payload) as { activeWorktreeId?: string | null; activeTabIdByWorktree?: Record<string, string | null> }
-    const worktreeId = state.activeWorktreeId
-    const tabId = worktreeId ? state.activeTabIdByWorktree?.[worktreeId] : null
-    return worktreeId && tabId ? { worktreeId, tabId } : null
+    const client = new RuntimeClient()
+    const workspaces = await client.call('worktree.ps', { limit: 10000 }, { timeoutMs: ${LIST_TIMEOUT_MS} })
+    const active = (workspaces.result?.worktrees || []).filter(row => row.isActive)
+    if (active.length !== 1) {
+      console.log('null')
+    } else {
+      const answer = await client.call('${LIST_METHOD}', { worktree: active[0].worktreeId }, { timeoutMs: ${LIST_TIMEOUT_MS} })
+      const { worktree, activeTabId } = answer.result || {}
+      console.log(JSON.stringify({ worktree, activeTabId }))
+    }
+  } catch (error) {
+    console.log(JSON.stringify({ error: { code: error.code || null, message: String(error.message || error) } }))
+  }
+  process.exit(0)
+})()
+`
+
+/**
+ * The tab id the panel compares against a session's: a terminal tab's runtime id is
+ * `<tabId>::<leafId>`, and every pane of the tab is on screen, so the leaf is dropped. A chat's
+ * (`agent-session:<id>`) and any other tab's id stays as it is.
+ */
+export const shownTab = (activeTabId: string) => activeTabId.split('::')[0]
+
+/** The workspace and tab in what `session.tabs.list` answered, or null when it did not answer. */
+export function selectedOf(output: string): Selected | null {
+  try {
+    const parsed = JSON.parse(output.trim().split('\n').pop() ?? '') as { worktree?: string; activeTabId?: string | null }
+    return parsed?.worktree ? { worktreeId: parsed.worktree, tabId: parsed.activeTabId ? shownTab(parsed.activeTabId) : null } : null
   } catch {
     return null
   }
 }
 
 /**
- * The workspace and tab Orca's window shows, from the window state Orca saves in its profile, about
- * a second and a half after each change. Orca reports no tab switch to plugins, and this read takes
- * milliseconds where asking the runtime starts a process.
+ * The workspace and tab Orca's window shows, read live through one runtime client process.
+ * Null when no unique workspace is focused or Orca cannot read its tabs.
  */
 export async function selectedTab(): Promise<Selected | null> {
-  try {
-    const index = JSON.parse(await readFile(join(ORCA_DATA, 'orca-profile-index.json'), 'utf8')) as { activeProfileId?: string }
-    const profile = index.activeProfileId
-    if (!profile || !/^[A-Za-z0-9_-]+$/.test(profile)) {
-      return null
-    }
-    const store = join(ORCA_DATA, 'profiles', profile, 'profile-state.db')
-    const payload = await run('sqlite3', ['-readonly', store, "select payload from profile_state_documents where domain = 'workspaceSession'"])
-    return selectedOf(payload)
-  } catch {
-    return null
-  }
+  return selectedOf(await runInOrca(LIST_SCRIPT, {}, LIST_TIMEOUT_MS * 2 + 1000))
 }

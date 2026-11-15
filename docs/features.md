@@ -1,6 +1,7 @@
 # Power Sessions features
 
 An overview of your Claude and Codex sessions across your projects.
+The project, workspace and session Orca shows are in normal text, the rest muted.
 
 | Dark | Light |
 | --- | --- |

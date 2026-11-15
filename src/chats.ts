@@ -4,7 +4,7 @@
 // internals, not a published API: an Orca update can change them, and the error then says so.
 import { execFile } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
-import { realpathSync } from 'node:fs'
+import { existsSync, realpathSync } from 'node:fs'
 import process from 'node:process'
 
 const METHOD = 'agentSession.conversationCommand'
@@ -97,15 +97,35 @@ export function compactProblem(output: string): string | null {
  */
 export function runInOrca(script: string, request: Record<string, unknown>, timeoutMs: number): Promise<string> {
   const contents = `${realpathSync(APP)}/Contents`
-  const argument = JSON.stringify({ ...request, client: `${contents}/Resources/app.asar.unpacked/out/cli/runtime-client.js` })
+  const argument = JSON.stringify({ ...request, client: runtimeClientPath(`${contents}/Resources/app.asar.unpacked`) })
   return new Promise<string>((resolve, reject) => {
     execFile(
       `${contents}/MacOS/Orca`,
       ['-e', script, argument],
       { timeout: timeoutMs, env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' } },
-      (error: Error | null, stdout: string) => (error && !stdout ? reject(error) : resolve(stdout))
+      (error: Error | null, stdout: string, stderr: string) =>
+        error && !stdout ? reject(new Error(runFailure(stderr, error))) : resolve(stdout)
     )
   })
+}
+
+// Where Orca's CLI keeps its runtime client, newest layout first: Orca 1.4.259 moved it.
+const CLIENT_PATHS = ['out/cli/runtime/client.js', 'out/cli/runtime-client.js']
+
+/** The runtime client in Orca's unpacked app folder, throwing when no known path holds one. */
+export function runtimeClientPath(unpacked: string, exists: (path: string) => boolean = existsSync): string {
+  const found = CLIENT_PATHS.map((path) => `${unpacked}/${path}`).find((path) => exists(path))
+  if (!found) {
+    throw new Error('This Orca build keeps its runtime client somewhere the plugin does not know.')
+  }
+  return found
+}
+
+/** A short reason for a run that printed nothing: the first error line, never the script itself. */
+export function runFailure(stderr: string, error: Error): string {
+  const line = stderr.split('\n').find((l) => /^\w*Error\b/.test(l.trim()))?.trim()
+  const reason = (error as { killed?: boolean }).killed ? 'it timed out' : line || 'it exited without an answer'
+  return `Orca's runtime could not run the request: ${reason}.`
 }
 
 /** Runs `/compact` in a chat session, throwing with the reason when Orca does not. */

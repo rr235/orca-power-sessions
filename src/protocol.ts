@@ -39,6 +39,8 @@ export type Project = {
   name: string
   repo: string
   path: string | null
+  /** The ids of its source repos: a workspace's worktree id starts with its repo's id, then `::`. */
+  repoIds: string[]
   agents: number
   /** Orca workspaces (worktrees) of the project, the main checkout included. */
   worktrees: number
@@ -102,6 +104,13 @@ export type SessionUsage = {
   toolCallsSinceCompaction: number | null
 }
 
+/**
+ * The workspace Orca's window shows, by worktree id, and the tab it shows there, as Orca's runtime
+ * names it: `agent-session:<id>` for a chat, the tab id for a terminal. `tabId` is null when Orca
+ * reports no tab.
+ */
+export type Selected = { worktreeId: string; tabId: string | null }
+
 export type Overview = { servers: Server[]; projects: Project[]; sessions: Session[] }
 
 declare module 'orca' {
@@ -124,8 +133,8 @@ declare module 'orca' {
     /** Runs `/compact` in the session: sent to its terminal, or run in its chat through Orca's chat RPC.
      *  Rejects with the reason when a chat's compact did not complete. */
     'session.compact': { input: { key: string }; output: null }
-    /** The workspace and tab Orca's window shows, or null when it cannot tell. */
-    'session.selected': { output: { worktreeId: string; tabId: string } | null }
+    /** The workspace and tab Orca's window shows, or null when no workspace is focused or it cannot tell. */
+    'session.selected': { output: Selected | null }
     /** Shows a session's workspace and brings its tab to the front. */
     'session.focus': { input: { key: string; path: string }; output: null }
     /** Shows a project's main checkout in Orca. */

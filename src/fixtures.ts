@@ -80,10 +80,10 @@ export const DEMO: Overview = {
     }
   ],
   projects: [
-    { id: 'github:rr235/crm', name: 'CRM', repo: 'rr235/crm', path: '/w/crm', agents: 0, worktrees: 1 },
-    { id: 'github:rr235/blog', name: 'Personal Blog', repo: 'rr235/blog', path: '/w/blog', agents: 1, worktrees: 1 },
-    { id: 'github:mountin-io/platform', name: 'Platform', repo: 'mountin-io/platform', path: '/w/platform', agents: 1, worktrees: 1 },
-    { id: 'github:rr235/planner', name: 'Planner', repo: 'rr235/planner', path: '/w/planner', agents: 0, worktrees: 1 }
+    { id: 'github:rr235/crm', name: 'CRM', repo: 'rr235/crm', path: '/w/crm', repoIds: ['r4'], agents: 0, worktrees: 1 },
+    { id: 'github:rr235/blog', name: 'Personal Blog', repo: 'rr235/blog', path: '/w/blog', repoIds: ['r3'], agents: 1, worktrees: 1 },
+    { id: 'github:mountin-io/platform', name: 'Platform', repo: 'mountin-io/platform', path: '/w/platform', repoIds: ['r1'], agents: 1, worktrees: 1 },
+    { id: 'github:rr235/planner', name: 'Planner', repo: 'rr235/planner', path: '/w/planner', repoIds: ['r5'], agents: 0, worktrees: 1 }
   ]
 }
 

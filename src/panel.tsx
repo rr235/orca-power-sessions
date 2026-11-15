@@ -25,19 +25,20 @@ import {
   update,
   type PanelContext
 } from 'orca'
-import type { Overview, Project, QuickActionInput, PullRequestInfo, Server, Session, SessionUsage } from './protocol'
+import { tabOfPane } from './overview'
+import type { Overview, Project, QuickActionInput, PullRequestInfo, Selected, Server, Session, SessionUsage } from './protocol'
 import { normalUrl } from './url'
 import { Icon, SessionDetails } from './session-details'
 
 const REFRESH_MS = 15000
 const EVENT_DELAY_MS = 400
-// How often the panel reads which tab Orca shows; Orca saves it about 1.5s after each switch.
-const SELECTED_MS = 1000
-// After a press shows a tab, how long the panel trusts that over Orca's saved state, which lags.
+// How often the panel asks which tab Orca shows; each read starts a process under Orca's Node.
+const SELECTED_MS = 2000
+// After a press shows a tab, how long the panel trusts that over a read that may predate the switch.
 const SELECTED_HOLD_MS = 3000
 
 // The last overview, kept across panel runs so reopening shows it at once while it refreshes.
-const overview = atom<Overview | null>('overview', null, { persist: 'plugin', version: 6, migrate: () => null })
+const overview = atom<Overview | null>('overview', null, { persist: 'plugin', version: 7, migrate: () => null })
 // Which sections are open, kept across panel runs.
 const sections = atom<{ sessions?: boolean; actions: boolean }>('sections', { sessions: true, actions: true }, { persist: 'plugin' })
 // Sessions whose details are open, by session key. Orca runs a panel per workspace, and showing a
@@ -55,9 +56,11 @@ let expandedReads = 0
 // Writes not yet answered: a read meanwhile could still see the older value, so it waits for them.
 let expandedWrites = 0
 let expandedReadWaiting = false
-// The workspace and tab Orca's window shows, so that session's title is in normal text.
-const selected = atom<{ worktreeId: string; tabId: string } | null>(null)
+// The workspace and tab Orca's window shows, so that session's title, and its workspace's and
+// project's names, are in normal text.
+const selected = atom<Selected | null>(null)
 let selectedHeldUntil = 0
+let selectedReading = false
 // Model, effort and tokens of sessions whose details were opened, by session key.
 const usage = atom<Record<string, SessionUsage>>({})
 // Title and state of pull requests Orca does not track, by URL, read when a session's details open.
@@ -190,19 +193,39 @@ const openProject = (project: Project) =>
   project.path
     ? act(`open:${project.id}`, () => plugin.request('project.open', { path: project.path as string }), `Could not open ${project.name}.`)
     : Promise.resolve()
-/** Whether Orca's window shows this session's tab. A pane key starts with the id of its tab. */
-export const isSelected = (session: Session, shown: { worktreeId: string; tabId: string } | null) =>
-  shown !== null && shown.worktreeId === session.worktreeId && shown.tabId === session.key.split(':')[0]
+/** The tab id Orca's runtime gives a session's tab: `agent-session:<id>` for a chat, else the pane key's tab. */
+export const sessionTab = (session: Session) => tabOfPane(session.key)?.tabId ?? session.key.split(':')[0]
+
+/** Whether Orca's window shows this session's tab. */
+export const isSelected = (session: Session, shown: Selected | null) =>
+  shown !== null && shown.worktreeId === session.worktreeId && shown.tabId === sessionTab(session)
+
+/**
+ * Whether Orca's window shows a workspace of this project. A worktree id starts with its repo's id,
+ * then `::`; a group outside every project knows its workspaces only by its sessions.
+ */
+export const isProjectSelected = (group: Pick<Group, 'project' | 'sessions'>, shown: Selected | null) =>
+  shown !== null &&
+  (group.project
+    ? // A worker older than the panel, mid-update, sends projects without repo ids.
+      (group.project.repoIds ?? []).some((id) => shown.worktreeId.startsWith(`${id}::`))
+    : group.sessions.some((s) => s.worktreeId === shown.worktreeId))
 
 async function loadSelected(): Promise<void> {
+  // A read starts a process; one at a time, so a slow one never piles up behind the timer.
+  if (selectedReading) {
+    return
+  }
+  selectedReading = true
   try {
     const shown = await plugin.request('session.selected', undefined, { timeoutMs: 10000 })
-    // Orca's window always shows some tab, so an empty answer is a failed read: keep the last one.
-    if (shown && Date.now() >= selectedHeldUntil) {
+    if (Date.now() >= selectedHeldUntil) {
       set(selected, shown)
     }
   } catch {
     // The titles keep the last known selection.
+  } finally {
+    selectedReading = false
   }
 }
 
@@ -212,7 +235,7 @@ async function focusSession(session: Session): Promise<void> {
     return
   }
   set(actionError, null)
-  set(selected, { worktreeId: session.worktreeId, tabId: session.key.split(':')[0] })
+  set(selected, { worktreeId: session.worktreeId, tabId: sessionTab(session) })
   selectedHeldUntil = Date.now() + SELECTED_HOLD_MS
   try {
     await plugin.request('session.focus', { key: session.key, path: session.path }, { timeoutMs: 30000 })
@@ -315,6 +338,8 @@ export function setup(ctx: PanelContext): () => void {
   return () => {
     clearInterval(timer)
     clearInterval(selectedTimer)
+    // A press's hold is this panel run's; the next run reads Orca afresh.
+    selectedHeldUntil = 0
     ++loadSeq
     if (eventTimer) {
       clearTimeout(eventTimer)
@@ -595,13 +620,14 @@ function ProjectGroup({ group }: { group: Group }) {
   const { project } = group
   return (
     <Box gap="none">
-      {/* The whole row is pressable and opens the project's main checkout in Orca. */}
+      {/* The whole row is pressable and opens the project's main checkout in Orca. Its name is in
+          normal text while Orca shows one of its workspaces. */}
       <List>
         <ListItem onPress={project?.path ? () => void openProject(project) : undefined}>
           <Box direction="row" align="center" gap="xs" minWidth={0}>
             <Icon src={`assets/details/project-${env.theme.colorScheme}.png`} alt="Project" px={12} />
             <Box grow minWidth={0}>
-              <Text size="sm" muted truncate>
+              <Text size="sm" muted={!isProjectSelected(group, read(selected))} truncate>
                 {group.name}
               </Text>
             </Box>
@@ -642,13 +668,14 @@ const WORKTREE_INDENT_PX = 12
 function WorktreeGroup({ worktree }: { worktree: Worktree }) {
   return (
     <Box gap="none">
-      {/* A label, not a control: a ListItem without a press, so its icon lines up with the sessions'. */}
+      {/* A label, not a control: a ListItem without a press, so its icon lines up with the sessions'.
+          Its name is in normal text while Orca shows this workspace. */}
       <List>
         <ListItem>
           <Box direction="row" align="center" gap="xs" minWidth={0}>
             <Icon src={`assets/details/worktree-${env.theme.colorScheme}.png`} alt="Worktree" px={11} />
             <Box grow minWidth={0}>
-              <Text size="xs" muted truncate>
+              <Text size="xs" muted={read(selected)?.worktreeId !== worktree.key} truncate>
                 {worktree.name}
               </Text>
             </Box>
