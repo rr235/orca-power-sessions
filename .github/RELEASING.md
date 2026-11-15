@@ -26,6 +26,6 @@ Feature and fix PRs wait on `main` until the next release. Merging a release PR 
 
 - Start with `## Power Sessions X.Y.Z` and one sentence on what changed for users.
 - Add a bullet per user-visible change.
-- End with "No new plugin capabilities. Updates install without re-approval." or name each capability added.
+- When a release adds a plugin capability, end by naming each one. Say nothing about capabilities otherwise.
 
 The catalog pins each tag. Never move or reuse a tag: the workflow skips a version that already has one, so a mistake ships as the next patch release.
