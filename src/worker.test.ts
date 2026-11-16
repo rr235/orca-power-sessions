@@ -226,7 +226,8 @@ const SERVING = JSON.stringify({
     terminals: [
       { handle: 'term_new', tabId: 'tab1', leafId: 'leaf1', connected: true },
       { handle: 'term_b', tabId: 'tab2', leafId: 'leaf2', connected: false },
-      { handle: 'term_agent', tabId: 'tab3', leafId: 'leaf3', connected: true }
+      { handle: 'term_agent', tabId: 'tab3', leafId: 'leaf3', connected: true },
+      { handle: 'term_other', tabId: 'tab4', leafId: 'leaf4', connected: true }
     ]
   }
 })
@@ -257,5 +258,7 @@ test('walks up from a listening process to the terminal serving the port', async
   )
   assert.equal(await terminalServing([30], tree({ 30: plain(20) }), SERVING, AGENTS), null, 'a process that exited mid-walk')
   assert.equal(await terminalServing([], tree({}), SERVING, AGENTS), null, 'nothing listens')
-  assert.equal(await terminalServing([40, 30], tree({ 30: inPane(1, 'tab1:leaf1') }), SERVING, AGENTS), 'term_new', 'the next listener when one has no terminal')
+  assert.equal(await terminalServing([40, 30], tree({ 30: inPane(1, 'tab1:leaf1') }), SERVING, AGENTS), null, 'an unidentified listener makes the port ambiguous')
+  assert.equal(await terminalServing([30, 40], tree({ 30: inPane(1, 'tab1:leaf1'), 40: inPane(1, 'tab4:leaf4') }), SERVING, AGENTS), null, 'different terminals can listen on the same port over IPv4 and IPv6')
+  assert.equal(await terminalServing([30, 40], tree({ 30: inPane(1, 'tab1:leaf1'), 40: inPane(1, 'tab1:leaf1') }), SERVING, AGENTS), 'term_new', 'multiple listening processes in one terminal are unambiguous')
 })
