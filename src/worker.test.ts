@@ -1,7 +1,7 @@
 import { assert, test } from 'orca/testing'
-import { orderLikeSidebar, parseProjects, parseSessions, terminalAlive, terminalByTitle, terminalOfPane, workspaceRanks } from './overview'
+import { agentPanes, orderLikeSidebar, parseProjects, parseSessions, terminalAlive, terminalByTitle, terminalOfPane, terminalOfProcess, terminalServing, workspaceRanks } from './overview'
 import type { Project, QuickAction } from './protocol'
-import { linkProjects, portOf, printedUrl, saveAction, storedActions, terminalTail, terminalTitle } from './servers'
+import { linkProjects, listenerPids, portOf, printedUrl, processTerminal, saveAction, storedActions, terminalTail, terminalTitle } from './servers'
 import { handleOf } from './worker'
 import { compactProblem, operationId, payloadFingerprint, runFailure, runtimeClientPath } from './chats'
 
@@ -205,4 +205,57 @@ test('saves a new or changed action, forgetting what no longer holds', () => {
   assert.throws(() => saveAction(linked, { name: 'Web', command: 'x', projectId: 'p-web', url: 'ftp://x' }, PROJECT_LIST, 'x'))
   assert.throws(() => saveAction(linked, { name: 'Web', command: ' ', projectId: 'p-web' }, PROJECT_LIST, 'x'))
   assert.throws(() => saveAction(linked, { name: 'Web', command: 'x', projectId: 'p-cloud' }, PROJECT_LIST, 'x'))
+})
+
+test('reads a server process and the terminal it was started in', () => {
+  assert.deepEqual(listenerPids('12320\n12320\n\n1\n'), [12320], 'once each, never launchd')
+  assert.deepEqual(listenerPids(''), [])
+  const shell = '27643 ttys004 bun run kb:ui --dev TERM=xterm ORCA_TAB_ID=tab1 ORCA_TERMINAL_HANDLE=term_old ORCA_PANE_KEY=tab1:leaf1 HOME=/u'
+  assert.deepEqual(processTerminal(`  ${shell}\n`), { ppid: 27643, detached: false, paneKey: 'tab1:leaf1', handle: 'term_old' })
+  assert.deepEqual(processTerminal('12318 ttys004 node scripts/serve.mjs --dev'), { ppid: 12318, detached: false, paneKey: null, handle: null }, 'a clean environment')
+  assert.equal(processTerminal('1 ?? node pm2').detached, true, 'a macOS daemon')
+  assert.equal(processTerminal('1 ? node pm2').detached, true, 'a Linux daemon')
+  assert.equal(processTerminal('1 ?? /sbin/launchd').ppid, null, 'the walk ends at launchd')
+  assert.equal(processTerminal('5 ttys001 echo xORCA_PANE_KEY=tab9:leaf9').paneKey, null, 'only a whole variable counts')
+  const ps = JSON.stringify({ result: { worktrees: [{ worktreeId: 'w1', agents: [{ paneKey: 'tab3:leaf3' }, {}] }, { worktreeId: 'w2' }] } })
+  assert.deepEqual([...agentPanes(ps)], ['tab3:leaf3'])
+})
+
+const SERVING = JSON.stringify({
+  result: {
+    terminals: [
+      { handle: 'term_new', tabId: 'tab1', leafId: 'leaf1', connected: true },
+      { handle: 'term_b', tabId: 'tab2', leafId: 'leaf2', connected: false },
+      { handle: 'term_agent', tabId: 'tab3', leafId: 'leaf3', connected: true }
+    ]
+  }
+})
+const AGENTS = new Set(['tab3:leaf3'])
+
+test('finds the terminal by pane, else handle, never an agent\'s', () => {
+  assert.equal(terminalOfProcess(SERVING, 'tab1:leaf1', 'term_old', AGENTS), 'term_new', 'the pane outlives a reissued handle')
+  assert.equal(terminalOfProcess(SERVING, null, 'term_new', AGENTS), 'term_new')
+  assert.equal(terminalOfProcess(SERVING, 'tab2:leaf2', 'term_b', AGENTS), null, 'a disconnected terminal')
+  assert.equal(terminalOfProcess(SERVING, 'tab3:leaf3', null, AGENTS), null, 'an agent by pane')
+  assert.equal(terminalOfProcess(SERVING, null, 'term_agent', AGENTS), null, 'an agent by handle')
+  assert.equal(terminalOfProcess(SERVING, null, null, AGENTS), null)
+})
+
+test('walks up from a listening process to the terminal serving the port', async () => {
+  type Info = { ppid: number | null; detached: boolean; paneKey: string | null; handle: string | null }
+  const tree = (processes: Record<number, Info>) => async (pid: number) => processes[pid] ?? null
+  const plain = (ppid: number | null): Info => ({ ppid, detached: false, paneKey: null, handle: null })
+  const inPane = (ppid: number | null, paneKey: string): Info => ({ ppid, detached: false, paneKey, handle: null })
+  // node (clean environment) -> bun -> the shell of tab1:leaf1.
+  assert.equal(await terminalServing([30], tree({ 30: plain(20), 20: inPane(10, 'tab1:leaf1'), 10: inPane(1, 'tab1:leaf1') }), SERVING, AGENTS), 'term_new')
+  assert.equal(await terminalServing([30], tree({ 30: { ...plain(20), detached: true }, 20: inPane(1, 'tab1:leaf1') }), SERVING, AGENTS), null, 'a daemon is not stopped by closing a terminal')
+  assert.equal(await terminalServing([30], tree({ 30: inPane(20, 'tab3:leaf3') }), SERVING, AGENTS), null, 'a server an agent started')
+  assert.equal(
+    await terminalServing([30], tree({ 30: inPane(20, 'tab-gone:leaf'), 20: inPane(1, 'tab1:leaf1') }), SERVING, AGENTS),
+    null,
+    'the nearest Orca environment decides, never an outer terminal'
+  )
+  assert.equal(await terminalServing([30], tree({ 30: plain(20) }), SERVING, AGENTS), null, 'a process that exited mid-walk')
+  assert.equal(await terminalServing([], tree({}), SERVING, AGENTS), null, 'nothing listens')
+  assert.equal(await terminalServing([40, 30], tree({ 30: inPane(1, 'tab1:leaf1') }), SERVING, AGENTS), 'term_new', 'the next listener when one has no terminal')
 })

@@ -123,3 +123,25 @@ export function terminalTail(json: string): string[] {
     return []
   }
 }
+
+/** The process ids `lsof -t` prints, one per line. */
+export function listenerPids(output: string): number[] {
+  return [...new Set(output.split('\n').map((line) => Number(line.trim())).filter((pid) => Number.isInteger(pid) && pid > 1))]
+}
+
+/** A process's parent, controlling terminal and the Orca terminal it was started in, from
+ *  `ps eww -o ppid=,tty=,command= -p <pid>`: Orca puts `ORCA_PANE_KEY` and `ORCA_TERMINAL_HANDLE`
+ *  in a terminal's environment. A daemon has no controlling terminal (`??` on macOS, `?` on Linux). */
+export type ProcessTerminal = { ppid: number | null; detached: boolean; paneKey: string | null; handle: string | null }
+
+export function processTerminal(output: string): ProcessTerminal {
+  const line = output.trim()
+  const [, ppidText, tty] = /^(\d+)\s+(\S+)/.exec(line) ?? []
+  const ppid = Number(ppidText)
+  return {
+    ppid: Number.isInteger(ppid) && ppid > 1 ? ppid : null,
+    detached: !tty || /^\?+$/.test(tty),
+    paneKey: /\sORCA_PANE_KEY=(\S+)/.exec(line)?.[1] ?? null,
+    handle: /\sORCA_TERMINAL_HANDLE=(term_\S+)/.exec(line)?.[1] ?? null
+  }
+}

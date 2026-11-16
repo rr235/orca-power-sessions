@@ -254,6 +254,61 @@ export function terminalOfPane(terminalsJson: string, paneKey: string): string |
   return terminals.find((t) => `${t.tabId}:${t.leafId}` === paneKey && t.connected !== false)?.handle ?? null
 }
 
+/**
+ * The live terminal of a process's Orca environment: by its pane, which outlives a reissued handle,
+ * else by its handle. An agent's terminal is never one, so Stop never closes an agent.
+ */
+export function terminalOfProcess(terminalsJson: string, paneKey: string | null, handle: string | null, agents: ReadonlySet<string>): string | null {
+  const terminals = result<{ terminals?: TerminalRow[] }>(terminalsJson).terminals ?? []
+  const live = terminals.filter((t) => t.connected !== false)
+  const found = (paneKey ? live.find((t) => `${t.tabId}:${t.leafId}` === paneKey) : undefined) ?? (handle ? live.find((t) => t.handle === handle) : undefined)
+  return found && !agents.has(`${found.tabId}:${found.leafId}`) ? (found.handle ?? null) : null
+}
+
+/** A process as `processTerminal` in servers.ts reads it. */
+type ProcessInfo = { ppid: number | null; detached: boolean; paneKey: string | null; handle: string | null }
+
+// How far up from a server's process to look for the terminal it runs in.
+const MAX_ANCESTORS = 12
+
+/**
+ * The Orca terminal serving a port: the nearest ancestor of a listening process with Orca's
+ * terminal environment. A listener without a controlling terminal (pm2, a detached server) is
+ * skipped, since closing the terminal it came from would not stop it.
+ */
+export async function terminalServing(
+  pids: readonly number[],
+  processOf: (pid: number) => Promise<ProcessInfo | null>,
+  terminalsJson: string,
+  agents: ReadonlySet<string>
+): Promise<string | null> {
+  for (const pid of pids) {
+    let current: number | null = pid
+    for (let depth = 0; current && depth < MAX_ANCESTORS; depth++) {
+      const found = await processOf(current)
+      if (!found || (depth === 0 && found.detached)) {
+        break
+      }
+      if (found.paneKey || found.handle) {
+        // The nearest Orca environment decides: an outer one belongs to a terminal that is not serving.
+        const terminal = terminalOfProcess(terminalsJson, found.paneKey, found.handle, agents)
+        if (terminal) {
+          return terminal
+        }
+        break
+      }
+      current = found.ppid
+    }
+  }
+  return null
+}
+
+/** The panes agents run in, from `orca worktree ps --json`: a server started by an agent is not the agent's terminal to close. */
+export function agentPanes(psJson: string): Set<string> {
+  const rows = result<{ worktrees?: PsRow[] }>(psJson).worktrees ?? []
+  return new Set(rows.flatMap((row) => (row.agents ?? []).flatMap((agent) => (agent.paneKey ? [agent.paneKey] : []))))
+}
+
 /** Whether a terminal handle is still live in this checkout in `orca terminal list --json`. */
 export function terminalAlive(terminalsJson: string, handle: string, path: string): boolean {
   const terminals = result<{ terminals?: TerminalRow[] }>(terminalsJson).terminals ?? []

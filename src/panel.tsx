@@ -352,7 +352,7 @@ function ServerCard({ server }: { server: Server }) {
   const pending = Boolean(read(busy)[`server:${server.id}`])
   const ours = Boolean(server.terminal)
   const editingThis = read(editing) === server.id
-  // Run and Stop share the first slot; a server running outside this panel has nothing to stop.
+  // Run and Stop share the first slot; a server with no Orca terminal to close, such as one under pm2 or an agent, has nothing to stop.
   const control = !server.up ? (
     <IconButton
       icon="play"
@@ -386,7 +386,7 @@ function ServerCard({ server }: { server: Server }) {
         <IconButton
           icon="open-external"
           label={`Open ${server.name}`}
-          tooltip={ours ? `Open ${server.url}` : `Open ${server.url} (started outside this panel)`}
+          tooltip={ours ? `Open ${server.url}` : `Open ${server.url} (no terminal to stop)`}
           size="xs"
           variant="ghost"
           onPress={() => openServer(server)}
