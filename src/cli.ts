@@ -15,7 +15,10 @@ const ORCA_CLI = process.env.ORCA_CLI_COMMAND
 const CANDIDATES = {
   orca: ORCA_CLI,
   sqlite3: ['sqlite3', '/usr/bin/sqlite3'],
-  gh: ['gh', '/opt/homebrew/bin/gh', '/usr/local/bin/gh']
+  gh: ['gh', '/opt/homebrew/bin/gh', '/usr/local/bin/gh'],
+  // lsof and ps find the terminal a server started outside the panel runs in.
+  lsof: ['lsof', '/usr/sbin/lsof', '/usr/bin/lsof'],
+  ps: ['ps', '/bin/ps', '/usr/bin/ps']
 } as const
 
 const DEFAULT_TIMEOUT_MS = 15000

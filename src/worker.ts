@@ -5,9 +5,9 @@ import { randomUUID } from 'node:crypto'
 import { createConnection } from 'node:net'
 import type { OrcaWorkerApi } from 'orca/worker'
 import { run } from './cli'
-import { chatSessionId, orderLikeSidebar, parseProjects, parseSessions, terminalAlive, terminalByTitle, terminalOfPane, workspaceRanks } from './overview'
+import { agentPanes, chatSessionId, orderLikeSidebar, parseProjects, parseSessions, terminalAlive, terminalByTitle, terminalOfPane, terminalServing, workspaceRanks } from './overview'
 import type { Overview, Project, QuickAction, Server } from './protocol'
-import { linkProjects, portOf, printedUrl, saveAction, storedActions, terminalTail, terminalTitle } from './servers'
+import { linkProjects, listenerPids, portOf, printedUrl, processTerminal, saveAction, storedActions, terminalTail, terminalTitle } from './servers'
 import { pullRequestInfo } from './pulls'
 import { sessionUsage, tabPositions } from './usage'
 import { compactChat } from './chats'
@@ -100,6 +100,35 @@ export default function activate(orca: OrcaWorkerApi): void {
     )
   }
 
+  /** A missing lsof or ps is logged, since it would otherwise look like a server with no terminal. */
+  function logMissing(error: unknown): void {
+    if ((error as { notFound?: boolean }).notFound) {
+      orca.log(`finding a server's terminal: ${(error as Error).message}`)
+    }
+  }
+
+  /** The Orca terminal serving `port` when the panel did not start it, as `terminalServing` in overview.ts finds it. */
+  async function servingTerminal(port: number, terminalsJson: string, agents: ReadonlySet<string>): Promise<string | null> {
+    let pids: number[]
+    try {
+      pids = listenerPids(await run('lsof', ['-nP', '-t', `-iTCP:${port}`, '-sTCP:LISTEN']))
+    } catch (error) {
+      // lsof also fails when nothing listens.
+      logMissing(error)
+      return null
+    }
+    const processOf = async (pid: number) => {
+      try {
+        return processTerminal(await run('ps', ['eww', '-o', 'ppid=,tty=,command=', '-p', String(pid)]))
+      } catch (error) {
+        // ps also fails for a process that just exited.
+        logMissing(error)
+        return null
+      }
+    }
+    return terminalServing(pids, processOf, terminalsJson, agents)
+  }
+
   /** The address each server without one printed in its terminal, saved for next time. */
   async function learnUrls(list: QuickAction[], terminals: Record<string, string | null>): Promise<QuickAction[]> {
     const learned = new Map<string, string>()
@@ -148,6 +177,14 @@ export default function activate(orca: OrcaWorkerApi): void {
         return port ? portOpen(port) : Promise.resolve(Boolean(terminals[a.id]))
       })
     )
+    // A server started outside the panel gets the terminal it runs in, so it can be shown and stopped too.
+    const agents = agentPanes(psJson)
+    const serving = await Promise.all(
+      list.map((a, index) => {
+        const port = portOf(a.url)
+        return port && up[index] && !terminals[a.id] ? servingTerminal(port, terminalsJson, agents) : Promise.resolve(null)
+      })
+    )
     const servers: Server[] = list.map((a, index) => ({
       id: a.id,
       name: a.name,
@@ -155,14 +192,21 @@ export default function activate(orca: OrcaWorkerApi): void {
       projectId: a.projectId,
       url: a.url,
       up: up[index],
-      terminal: terminals[a.id] ?? null
+      terminal: terminals[a.id] ?? serving[index] ?? null
     }))
     return { servers, projects: projectList, sessions }
   }
 
-  async function liveTerminal(a: QuickAction): Promise<string | null> {
+  /** The terminal the panel started the server in, else the one serving its port, which is then known to be serving. */
+  async function liveTerminal(a: QuickAction): Promise<{ terminal: string | null; serving: boolean }> {
     const terminalsJson = await run('orca', ['terminal', 'list', '--json'])
-    return liveTerminals([a], terminalsJson, await handles())[a.id] ?? null
+    const tracked = liveTerminals([a], terminalsJson, await handles())[a.id]
+    if (tracked) {
+      return { terminal: tracked, serving: false }
+    }
+    const port = portOf(a.url)
+    const serving = port ? await servingTerminal(port, terminalsJson, agentPanes(await run('orca', ['worktree', 'ps', '--json']))) : null
+    return { terminal: serving, serving: Boolean(serving) }
   }
 
   // One start per server at a time, so a double press opens one terminal.
@@ -170,7 +214,10 @@ export default function activate(orca: OrcaWorkerApi): void {
 
   async function start(a: QuickAction): Promise<null> {
     const port = portOf(a.url)
-    const [live, up] = await Promise.all([liveTerminal(a), port ? portOpen(port) : Promise.resolve(false)])
+    const [found, portUp] = await Promise.all([liveTerminal(a), port ? portOpen(port) : Promise.resolve(false)])
+    const live = found.terminal
+    // A terminal found by its port is serving, even when the port check timed out: never type the command into it.
+    const up = portUp || found.serving
     if (live && (up || !port)) {
       // Already serving, or its address is not known yet so it may be: show its terminal.
       await run('orca', ['terminal', 'switch', '--terminal', live, '--json'])
@@ -220,7 +267,7 @@ export default function activate(orca: OrcaWorkerApi): void {
     return pending
   })
   orca.panels.handle('server.stop', async ({ id }) => {
-    const live = await liveTerminal(await action(id))
+    const live = (await liveTerminal(await action(id))).terminal
     if (live) {
       await run('orca', ['terminal', 'close', '--terminal', live, '--json'])
     }
