@@ -19,5 +19,11 @@ export default defineCheck({
   details: { requests, storage: { expanded: { p1: true, p2: true } } },
   pinned: { requests, storage: { pinned: ['p1'], expanded: { p2: true } } },
   worktrees: { requests: { ...requests, 'overview.load': () => DEMO_WORKTREES }, storage: { expanded: { p1: true } } },
+  chats: {
+    requests: {
+      ...requests,
+      'overview.load': () => ({ ...DEMO, sessions: DEMO.sessions.map((s) => (s.key === 'p2' ? { ...s, key: 'structured-agent-session-p2:leaf-1' } : s)) })
+    }
+  },
   empty: { requests: { ...requests, 'overview.load': () => ({ ...DEMO, sessions: [] }) } }
 })

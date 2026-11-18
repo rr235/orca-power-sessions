@@ -4,7 +4,7 @@ import { storage } from 'orca'
 import { DEMO, DEMO_USAGE, DEMO_WORKTREES } from './fixtures'
 import * as panel from './panel'
 
-/** The pressable row holding the pin or unpin image named `alt`: an image's alt is not a label. */
+/** The pressable row holding the image named `alt` (pin, unpin or chat): an image's alt is not a label. */
 function pinControl(view: Awaited<ReturnType<typeof mount>>, alt: string) {
   const image = view.findAll({ type: 'Image' }).find((i) => i.props.alt === alt)
   if (!image) {
@@ -302,6 +302,34 @@ test('matches the tab Orca shows to a chat or terminal session', () => {
   assert.equal(panel.isSelected(terminal, shown('tab-1', 'r2::/w')), false, 'the same tab id in another workspace')
   assert.equal(panel.isSelected(terminal, shown(null)), false, 'a file or browser tab')
   assert.equal(panel.isSelected(terminal, null), false)
+})
+
+test('shows a chat button for a chat session and a terminal button for a terminal one', async () => {
+  const focused: string[] = []
+  const chat = { ...DEMO.sessions[1], key: 'structured-agent-session-claude_abc:leaf-1' }
+  const host = mockHost({
+    requests: {
+      'overview.load': () => ({ ...DEMO, sessions: [DEMO.sessions[0], chat] }),
+      'session.usage': () => ({}),
+      'session.focus': ({ key }) => {
+        focused.push(key)
+        return null
+      }
+    }
+  })
+  const view = await mount(panel, { host })
+  try {
+    await view.settled()
+    const label = `Show ${chat.title} tab`
+    assert.equal(view.find({ type: 'IconButton', label }), null, 'no terminal button for a chat')
+    const image = view.findAll({ type: 'Image' }).find((i) => i.props.alt === label)
+    assert.match(String(image?.props.src), /^assets\/details\/chat-tab-(dark|light)\.png$/)
+    assert.equal(view.find({ type: 'IconButton', label: `Show ${DEMO.sessions[0].title} tab` })?.props.icon, 'terminal')
+    await view.press(pinControl(view, label) as never)
+    assert.deepEqual(focused, [chat.key], 'the chat button shows its tab in Orca')
+  } finally {
+    await view.unmount()
+  }
 })
 
 test('groups a project\'s sessions by worktree when it has more than one', async () => {
