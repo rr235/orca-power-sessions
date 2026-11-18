@@ -7,7 +7,7 @@ import { infoOf } from './pulls'
 import { contextLabel, countLabel, modelLabel, modelTone, tokenLabel, tokensStatement, turnsTone } from './session-details'
 import { run } from './cli'
 import { chatSessionId } from './overview'
-import { chatSource, claudeWindow, contextReports, currentContext, hookStatus, parseHookStatus, Tally } from './usage'
+import { chatSource, claudeWindow, contextReports, currentContext, hookStatus, parseHookStatus, sessionStore, Tally } from './usage'
 
 test('forgets the context at a compaction, and takes a newer report from Orca', () => {
   const tally = new Tally()
@@ -144,11 +144,53 @@ test("reads each chat session's context from Orca's last report", async () => {
          ('claude_b', 'e0', 2, 0, '${row('report', 400_000)}');`
     ])
     // The newest generation's last report wins; an estimate carries no window; old sessions read their rows.
-    const reports = await contextReports(['claude_a', 'claude_b', 'claude_c', "x'; drop table journal_rows; --"], store)
+    const reports = await contextReports(['claude_a', 'claude_b', 'claude_c', "x'; drop table journal_rows; --"], { path: store, layout: 'journal' })
     assert.deepEqual(Object.fromEntries(reports), {
       claude_a: { window: 400_000, used: 100_000, at: 400_000 },
       claude_b: { window: 400_000, used: 100_000, at: 400_000 }
     })
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test("reads each chat session's context from the domain store's items", async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'quick-actions-'))
+  const store = join(dir, 'domain.db')
+  const item = (id: string, sequence: number, kind: string, window: number, at: number, hidden = 0) =>
+    `('${id}', 'e', '${id}-${sequence}', ${sequence}, ${hidden}, 1, '${JSON.stringify({
+      body: { kind: 'turn', contextUsage: { used: { kind, windowTokens: window, usedTokens: window / 4, capturedAt: at } } }
+    })}')`
+  try {
+    await run('sqlite3', [
+      store,
+      `create table journal_items (session_id, epoch, item_id, sequence, hidden, context_window, payload_json, sequence_index default 0, ordinal default 0);
+       insert into journal_items (session_id, epoch, item_id, sequence, hidden, context_window, payload_json) values
+         ${item('a', 1, 'report', 1_000_000, 10)},
+         ${item('a', 2, 'report', 400_000, 20)},
+         ${item('a', 3, 'estimate', 200_000, 30)},
+         ${item('a', 4, 'report', 800_000, 40, 1)},
+         ${item('b', 1, 'report', 200_000, 5)};`
+    ])
+    // The newest visible report wins; an estimate and a hidden item are left out.
+    const reports = await contextReports(['a', 'b', 'c', "x'; drop table journal_items; --"], { path: store, layout: 'domain' })
+    assert.deepEqual(Object.fromEntries(reports), {
+      a: { window: 400_000, used: 100_000, at: 20 },
+      b: { window: 200_000, used: 50_000, at: 5 }
+    })
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test("reads chats from Orca's domain store, else its older journal store", async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'quick-actions-'))
+  const domain = join(dir, 'agent-session-domain.db')
+  const journal = join(dir, 'agent-session-journal.db')
+  try {
+    assert.deepEqual(sessionStore(domain, journal), { path: journal, layout: 'journal' })
+    await writeFile(domain, '')
+    assert.deepEqual(sessionStore(domain, journal), { path: domain, layout: 'domain' })
   } finally {
     await rm(dir, { recursive: true, force: true })
   }
