@@ -586,28 +586,31 @@ function SessionLine({ session, inPinnedArea = false }: { session: Session; inPi
       {chatSessionId(session.key) ? (
         <ChatButton session={session} />
       ) : (
-        <IconButton
-          icon="terminal"
-          label={`Show ${session.title} tab`}
-          size="xs"
-          variant="solid"
-          tone="success"
-          disabled={!session.path}
-          onPress={() => focusSession(session)}
-        />
+        // The same side padding as the chat button's ListItem, so both buttons and the pins line up.
+        <Box paddingX="sm" shrink={false}>
+          <IconButton
+            icon="terminal"
+            label={`Show ${session.title} tab`}
+            size="xs"
+            variant="solid"
+            tone="success"
+            disabled={!session.path}
+            onPress={() => focusSession(session)}
+          />
+        </Box>
       )}
     </Box>
   )
 }
 
 // Orca's IconButton has no chat icon and a Button holds only text, so a chat session's button is a
-// PNG drawn like the solid terminal IconButton, in a pressable row.
+// PNG drawn like the solid terminal IconButton, at its 24px, in a pressable row.
 function ChatButton({ session }: { session: Session }) {
   return (
     <Box shrink={false}>
       <List>
         <ListItem disabled={!session.path} onPress={() => focusSession(session)}>
-          <Icon src={`assets/details/chat-tab-${env.theme.colorScheme}.png`} alt={`Show ${session.title} tab`} px={20} />
+          <Icon src={`assets/details/chat-tab-${env.theme.colorScheme}.png`} alt={`Show ${session.title} tab`} px={24} />
         </ListItem>
       </List>
     </Box>
