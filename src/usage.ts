@@ -1,6 +1,7 @@
 // Each session's model, effort and token use. Orca's CLI does not report them, so they come from
 // where the agents record them: Orca's hook status file (terminal sessions), Orca's session store
 // (chat sessions) and the agent's own transcript, which is read once and then only as it grows.
+import { existsSync } from 'node:fs'
 import { open, readdir, readFile, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
@@ -12,9 +13,18 @@ const ORCA_DATA = join(homedir(), 'Library', 'Application Support', 'orca')
 // Orca keeps its hook status in an SQLite log since 1.4.256, and in a JSON file before.
 const HOOK_STATUS_DB = join(ORCA_DATA, 'agent-hooks', 'last-status.db')
 const HOOK_STATUS_JSON = join(ORCA_DATA, 'agent-hooks', 'last-status.json')
-const SESSION_STORE = join(ORCA_DATA, 'agent-session-journal.db')
+// Orca keeps chat sessions in its domain store since 1.4.262, and in its journal store before.
+const DOMAIN_STORE = join(ORCA_DATA, 'agent-session-domain.db')
+const JOURNAL_STORE = join(ORCA_DATA, 'agent-session-journal.db')
 const CHAT_PANE = 'structured-agent-session-'
 const SAFE_ID = /^[A-Za-z0-9_-]+$/
+
+/** Orca's chat session store and its layout: the domain store where it exists, else the journal store. */
+export type SessionStore = { path: string; layout: 'domain' | 'journal' }
+
+export function sessionStore(domain = DOMAIN_STORE, journal = JOURNAL_STORE): SessionStore {
+  return existsSync(domain) ? { path: domain, layout: 'domain' } : { path: journal, layout: 'journal' }
+}
 
 type Agent = 'claude' | 'codex'
 /** Where a session's numbers live: its transcript, and what Orca knows without reading it. */
@@ -382,7 +392,7 @@ async function tallyOf(path: string): Promise<Tally | null> {
   return current.offset ? current.tally : null
 }
 
-async function chatRecords(ids: string[]): Promise<Map<string, ChatRecord>> {
+async function chatRecords(ids: string[], store: SessionStore): Promise<Map<string, ChatRecord>> {
   if (!ids.length) {
     return new Map()
   }
@@ -390,7 +400,7 @@ async function chatRecords(ids: string[]): Promise<Map<string, ChatRecord>> {
   const out = await run('sqlite3', [
     '-readonly',
     '-json',
-    SESSION_STORE,
+    store.path,
     `select session_id, record_json from agent_session_records where session_id in (${list})`
   ]).catch(() => '')
   const rows = out.trim() ? (parse<{ session_id: string; record_json: string }[]>(out) ?? []) : []
@@ -406,10 +416,11 @@ export type ContextReport = { window: number | null; used: number | null; at: nu
 /**
  * The context Orca last reported for each of these chat sessions, by session id. Claude's window
  * differs between sessions of one model (400k or 1M), so this beats a guess by model; and Orca
- * reads the context again after a compaction, which the transcript does not record. Live sessions
- * write to `journal_outcomes`; older ones kept their reports in `journal_rows`.
+ * reads the context again after a compaction, which the transcript does not record. The domain
+ * store keeps reports in `journal_items`; the journal store kept them in `journal_outcomes`, and
+ * older sessions there in `journal_rows`.
  */
-export async function contextReports(ids: string[], store = SESSION_STORE): Promise<Map<string, ContextReport>> {
+export async function contextReports(ids: string[], store = sessionStore()): Promise<Map<string, ContextReport>> {
   const safe = [...new Set(ids)].filter((id) => SAFE_ID.test(id))
   if (!safe.length) {
     return new Map()
@@ -424,7 +435,16 @@ export async function contextReports(ids: string[], store = SESSION_STORE): Prom
         return `json_extract(${column}, '$.body.contextUsage.used.${key}') as ${name}`
       })
       .join(', ')
-  const sql = `
+  const domain = `
+    select id, window, used, at from (
+      select session_id as id, ${fields('payload_json')},
+        row_number() over (
+          partition by session_id
+          order by json_extract(payload_json, '$.body.contextUsage.used.capturedAt') desc, sequence desc, sequence_index desc, ordinal desc
+        ) as n
+      from journal_items where session_id in (${list}) and hidden = 0 and context_window = 1 and ${report('payload_json')}
+    ) where n = 1`
+  const journal = `
     with outcomes as (
       select id, window, used, at from (
         select g.session_id as id, ${fields('o.value_json')},
@@ -441,7 +461,8 @@ export async function contextReports(ids: string[], store = SESSION_STORE): Prom
     )
     select id, window, used, at from outcomes
     union all select id, window, used, at from legacy where id not in (select id from outcomes)`
-  const out = await run('sqlite3', ['-readonly', '-json', store, sql]).catch(() => '')
+  const sql = store.layout === 'domain' ? domain : journal
+  const out = await run('sqlite3', ['-readonly', '-json', store.path, sql]).catch(() => '')
   const rows = out.trim() ? (parse<{ id: string; window: unknown; used: unknown; at: unknown }[]>(out) ?? []) : []
   const count = (value: unknown) => (typeof value === 'number' && value > 0 ? value : null)
   return new Map(rows.map((row) => [row.id, { window: count(row.window), used: count(row.used), at: count(row.at) ?? 0 }]))
@@ -459,13 +480,13 @@ export function currentContext(tally: { context: number | null; contextAt: numbe
 }
 
 /** The sidebar position of these chat tabs, by tab id, from Orca's session store; others are left out. */
-export async function tabPositions(tabIds: string[]): Promise<Map<string, number>> {
+export async function tabPositions(tabIds: string[], store = sessionStore()): Promise<Map<string, number>> {
   const ids = [...new Set(tabIds)].filter((id) => id.startsWith(CHAT_PANE) && SAFE_ID.test(id))
   if (!ids.length) {
     return new Map()
   }
   const list = ids.map((id) => `'${id}'`).join(',')
-  const out = await run('sqlite3', ['-readonly', '-json', SESSION_STORE, `select tab_id, position from agent_session_tabs where tab_id in (${list})`]).catch(
+  const out = await run('sqlite3', ['-readonly', '-json', store.path, `select tab_id, position from agent_session_tabs where tab_id in (${list})`]).catch(
     () => ''
   )
   const rows = out.trim() ? (parse<{ tab_id: string; position: number }[]>(out) ?? []) : []
@@ -480,7 +501,8 @@ export async function sessionUsage(keys: string[]): Promise<Record<string, Sessi
     return id ? [[key, id] as [string, string]] : []
   }))
   const ids = [...new Set(chatIds.values())]
-  const [records, reports] = await Promise.all([chatRecords(ids), contextReports(ids)])
+  const store = sessionStore()
+  const [records, reports] = await Promise.all([chatRecords(ids, store), contextReports(ids, store)])
   const results = await Promise.all(
     keys.map(async (key): Promise<[string, SessionUsage] | null> => {
       const id = chatIds.get(key)
