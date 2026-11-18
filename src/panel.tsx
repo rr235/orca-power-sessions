@@ -25,7 +25,7 @@ import {
   update,
   type PanelContext
 } from 'orca'
-import { tabOfPane } from './overview'
+import { chatSessionId, tabOfPane } from './overview'
 import type { Overview, Project, QuickActionInput, PullRequestInfo, Selected, Server, Session, SessionUsage } from './protocol'
 import { normalUrl } from './url'
 import { Icon, SessionDetails } from './session-details'
@@ -550,7 +550,7 @@ function SessionLine({ session, inPinnedArea = false }: { session: Session; inPi
   return (
     // A list row toggles the details; in the Pinned area the details always show, so it does not press.
     // At the right, the pin button (unpin for a pinned session, here and in its project), then the
-    // terminal button that shows the session's tab in Orca. The buttons stay beside the ListItem so
+    // button that shows the session's tab in Orca (terminal, or chat for a chat). The buttons stay beside the ListItem so
     // controls are not nested.
     // Every row is one line that truncates. Only the title of the tab Orca shows is in normal text,
     // with no background.
@@ -583,15 +583,33 @@ function SessionLine({ session, inPinnedArea = false }: { session: Session; inPi
       ) : pinnable(session) ? (
         <PinButton kind="pin" session={session} onPress={() => pinSession(session.key)} />
       ) : null}
-      <IconButton
-        icon="terminal"
-        label={`Show ${session.title} tab`}
-        size="xs"
-        variant="solid"
-        tone="success"
-        disabled={!session.path}
-        onPress={() => focusSession(session)}
-      />
+      {chatSessionId(session.key) ? (
+        <ChatButton session={session} />
+      ) : (
+        <IconButton
+          icon="terminal"
+          label={`Show ${session.title} tab`}
+          size="xs"
+          variant="solid"
+          tone="success"
+          disabled={!session.path}
+          onPress={() => focusSession(session)}
+        />
+      )}
+    </Box>
+  )
+}
+
+// Orca's IconButton has no chat icon and a Button holds only text, so a chat session's button is a
+// PNG drawn like the solid terminal IconButton, in a pressable row.
+function ChatButton({ session }: { session: Session }) {
+  return (
+    <Box shrink={false}>
+      <List>
+        <ListItem disabled={!session.path} onPress={() => focusSession(session)}>
+          <Icon src={`assets/details/chat-tab-${env.theme.colorScheme}.png`} alt={`Show ${session.title} tab`} px={20} />
+        </ListItem>
+      </List>
     </Box>
   )
 }
