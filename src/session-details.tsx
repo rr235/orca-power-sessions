@@ -227,9 +227,27 @@ type SessionDetailsProps = {
   titleLoading: Record<string, boolean>
   compacting: boolean
   onCompact: () => void
+  /** Pins the session; null when it is pinned (its Pinned row unpins) or Orca does not name its pane. */
+  onPin: (() => void) | null
 }
 
-function StatusFact({ session, compacting, onCompact }: Pick<SessionDetailsProps, 'session' | 'compacting' | 'onCompact'>) {
+/**
+ * The drawn Lucide pin, or pin-off to unpin. Orca has no pin icon and its buttons hold only text,
+ * so a pressable ListItem holds the image, as a pull request's row does; the image's alt names it.
+ */
+export function PinButton({ kind, session, onPress }: { kind: 'pin' | 'unpin'; session: Session; onPress: () => void }) {
+  return (
+    <Box shrink={false}>
+      <List>
+        <ListItem onPress={onPress}>
+          <Icon src={`assets/details/${kind}-${env.theme.colorScheme}.png`} alt={`${kind === 'pin' ? 'Pin' : 'Unpin'} ${session.title}`} px={12} />
+        </ListItem>
+      </List>
+    </Box>
+  )
+}
+
+function StatusFact({ session, compacting, onCompact, onPin }: Pick<SessionDetailsProps, 'session' | 'compacting' | 'onCompact' | 'onPin'>) {
   const status = statusOf(session)
   const working = status.icon === 'working'
   // Active is the green dot and idle the grey one the session row shows, both static; other states
@@ -245,14 +263,18 @@ function StatusFact({ session, compacting, onCompact }: Pick<SessionDetailsProps
   ) : undefined
   return (
     <Box direction="row" align="center" gap="sm" minWidth={0}>
-      <Box grow minWidth={0}>
-        <Fact
-          icon={lead ? undefined : (`status-${status.icon}` as FactIcon)}
-          lead={lead}
-          alt="Status"
-        >
-          <Text size="xs">{status.label}</Text>
-        </Fact>
+      {/* The status, then the pin right after it. */}
+      <Box grow direction="row" align="center" gap="none" minWidth={0}>
+        <Box shrink minWidth={0}>
+          <Fact
+            icon={lead ? undefined : (`status-${status.icon}` as FactIcon)}
+            lead={lead}
+            alt="Status"
+          >
+            <Text size="xs">{status.label}</Text>
+          </Fact>
+        </Box>
+        {onPin ? <PinButton kind="pin" session={session} onPress={onPin} /> : null}
       </Box>
       {/* How long it has been in this state, just before Compact. */}
       {session.since ? (
@@ -281,13 +303,13 @@ function StatusFact({ session, compacting, onCompact }: Pick<SessionDetailsProps
 }
 
 /** What Orca and the agent's transcript say about a session, under its row while open. */
-export function SessionDetails({ session, stats, loading, info, titleLoading, compacting, onCompact }: SessionDetailsProps) {
+export function SessionDetails({ session, stats, loading, info, titleLoading, compacting, onCompact, onPin }: SessionDetailsProps) {
   // Only a Claude or Codex transcript has numbers to wait for, and only the first read shows
   // skeletons: a refresh keeps the numbers already shown.
   const pending = !stats && loading && Boolean(session.agent && AGENT_LABEL[session.agent])
   return (
     <Box background="accent" radius="lg" padding="sm" gap="sm" margin="xs">
-      <StatusFact session={session} compacting={compacting} onCompact={onCompact} />
+      <StatusFact session={session} compacting={compacting} onCompact={onCompact} onPin={onPin} />
       {pending ? (
         // One line each for the model, the context and the turns.
         <Box gap="xs">

@@ -25,10 +25,10 @@ import {
   update,
   type PanelContext
 } from 'orca'
-import { chatSessionId, tabOfPane } from './overview'
+import { tabOfPane } from './overview'
 import type { Overview, Project, QuickActionInput, PullRequestInfo, Selected, Server, Session, SessionUsage } from './protocol'
 import { normalUrl } from './url'
-import { Icon, SessionDetails } from './session-details'
+import { Icon, PinButton, SessionDetails } from './session-details'
 
 const REFRESH_MS = 15000
 const EVENT_DELAY_MS = 400
@@ -440,6 +440,7 @@ function SessionRow({ session, inPinnedArea = false }: { session: Session; inPin
               titleLoading={read(prLoading)}
               compacting={Boolean(read(busy)[`compact:${session.key}`])}
               onCompact={() => void compactSession(session)}
+              onPin={onPinOf(session)}
             />
           </Box>
         </Box>
@@ -525,39 +526,25 @@ const pinnable = (session: Session) => !session.key.startsWith(`${session.worktr
 /** Takes a session out of the Pinned area; it stays where it is in its project. */
 const unpinSession = (key: string) => update(pinned, (keys) => keys.filter((k) => k !== key))
 
-/**
- * The drawn Lucide pin, or pin-off to unpin. Orca has no pin icon and its buttons hold only text,
- * so a pressable ListItem holds the image, as a pull request's row does; the image's alt names it.
- */
-function PinButton({ kind, session, onPress }: { kind: 'pin' | 'unpin'; session: Session; onPress: () => void }) {
-  const name = `${kind === 'pin' ? 'Pin' : 'Unpin'} ${session.title}`
-  return (
-    <Box shrink={false}>
-      <List>
-        <ListItem onPress={onPress}>
-          <Icon src={`assets/details/${kind}-${env.theme.colorScheme}.png`} alt={name} px={12} />
-        </ListItem>
-      </List>
-    </Box>
-  )
-}
+/** The details card's pin, for a session that can pin and is not pinned yet. */
+const onPinOf = (session: Session) =>
+  pinnable(session) && !read(pinned).includes(session.key) ? () => pinSession(session.key) : null
 
 // How far an open details card sits in from its session's row, in pixels.
 const DETAILS_INDENT_PX = 16
 
 function SessionLine({ session, inPinnedArea = false }: { session: Session; inPinnedArea?: boolean }) {
-  const isPinned = read(pinned).includes(session.key)
   return (
-    // A list row toggles the details; in the Pinned area the details always show, so it does not press.
-    // At the right, the pin button (unpin for a pinned session, here and in its project), then the
-    // button that shows the session's tab in Orca (terminal, or chat for a chat). The buttons stay beside the ListItem so
-    // controls are not nested.
+    // A list row shows the session's tab (terminal or chat) in Orca. At the right, the chevron that
+    // toggles the details. In the Pinned area the details always show, so the row has no chevron;
+    // the unpin button takes its place. Buttons stay beside the ListItem so controls are
+    // not nested.
     // Every row is one line that truncates. Only the title of the tab Orca shows is in normal text,
     // with no background.
     <Box direction="row" align="center" gap="none" minWidth={0}>
       <Box grow minWidth={0}>
         <List>
-          <ListItem onPress={inPinnedArea ? undefined : () => toggleDetails(session.key)}>
+          <ListItem onPress={session.path ? () => void focusSession(session) : undefined}>
             <Box direction="row" align="center" gap="xs" minWidth={0}>
               {session.agentIcon ? <Icon src={session.agentIcon} alt={session.agent ?? 'Agent'} px={11} /> : null}
               <Box grow minWidth={0}>
@@ -578,39 +565,24 @@ function SessionLine({ session, inPinnedArea = false }: { session: Session; inPi
           </ListItem>
         </List>
       </Box>
-      {isPinned ? (
-        <PinButton kind="unpin" session={session} onPress={() => unpinSession(session.key)} />
-      ) : pinnable(session) ? (
-        <PinButton kind="pin" session={session} onPress={() => pinSession(session.key)} />
-      ) : null}
-      {chatSessionId(session.key) ? (
-        <ChatButton session={session} />
-      ) : (
-        // The same side padding as the chat button's ListItem, so both buttons and the pins line up.
-        <Box paddingX="sm" shrink={false}>
-          <IconButton
-            icon="terminal"
-            label={`Show ${session.title} tab`}
-            size="xs"
-            variant="solid"
-            tone="success"
-            disabled={!session.path}
-            onPress={() => focusSession(session)}
-          />
-        </Box>
-      )}
+      {inPinnedArea ? <PinButton kind="unpin" session={session} onPress={() => unpinSession(session.key)} /> : <DetailsButton session={session} />}
     </Box>
   )
 }
 
-// Orca's IconButton has no chat icon and a Button holds only text, so a chat session's button is a
-// PNG drawn like the solid terminal IconButton, at its 24px, in a pressable row.
-function ChatButton({ session }: { session: Session }) {
+// The chevron that shows or hides a session's details: a PNG like the pin's, in a pressable row,
+// since Orca's IconButton has no size under 24px.
+function DetailsButton({ session }: { session: Session }) {
+  const isOpen = Boolean(read(expanded)[session.key])
   return (
     <Box shrink={false}>
       <List>
-        <ListItem disabled={!session.path} onPress={() => focusSession(session)}>
-          <Icon src={`assets/details/chat-tab-${env.theme.colorScheme}.png`} alt={`Show ${session.title} tab`} px={24} />
+        <ListItem onPress={() => toggleDetails(session.key)}>
+          <Icon
+            src={`assets/details/chevron-${isOpen ? 'down' : 'right'}-${env.theme.colorScheme}.png`}
+            alt={`${isOpen ? 'Hide' : 'Show'} details of ${session.title}`}
+            px={12}
+          />
         </ListItem>
       </List>
     </Box>
@@ -646,9 +618,8 @@ function ProjectGroup({ group }: { group: Group }) {
       <List>
         <ListItem onPress={project?.path ? () => void openProject(project) : undefined}>
           <Box direction="row" align="center" gap="xs" minWidth={0}>
-            <Icon src={`assets/details/project-${env.theme.colorScheme}.png`} alt="Project" px={12} />
             <Box grow minWidth={0}>
-              <Text size="sm" muted={!isProjectSelected(group, read(selected))} truncate>
+              <Text size="xs" muted={!isProjectSelected(group, read(selected))} truncate>
                 {group.name}
               </Text>
             </Box>
@@ -679,9 +650,8 @@ export function byWorktree(sessions: Session[]): Worktree[] {
   return [...worktrees.values()]
 }
 
-/** Whether a project's sessions sit under their worktree: when the project has more than one. */
-const worktreeGrouped = (group: Group) =>
-  (group.project?.worktrees ?? 0) > 1 || new Set(group.sessions.map((s) => s.worktreeId)).size > 1
+/** Whether a project's sessions sit under their worktree: when they run in more than one. */
+const worktreeGrouped = (group: Group) => new Set(group.sessions.map((s) => s.worktreeId)).size > 1
 
 // How far a worktree's sessions sit in from its name, in pixels.
 const WORKTREE_INDENT_PX = 12

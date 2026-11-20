@@ -7,33 +7,29 @@ import { copyFileSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFile
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-type Tone = 'muted' | 'button' | 'success' | 'warning' | 'danger'
+type Tone = 'muted' | 'success' | 'warning' | 'danger'
 
-/** Asset name -> Lucide icon name (lucide.dev/icons) and colour; `button` draws a solid IconButton around it. */
+/** Asset name -> Lucide icon name (lucide.dev/icons) and colour. */
 const ICONS: Record<string, { icon: string; tone: Tone }> = {
   worktree: { icon: 'folder', tone: 'muted' },
   branch: { icon: 'git-branch', tone: 'muted' },
-  project: { icon: 'zap', tone: 'muted' },
   'status-waiting': { icon: 'circle-pause', tone: 'warning' },
   'status-failed': { icon: 'circle-x', tone: 'danger' },
   'status-stopped': { icon: 'circle-slash', tone: 'muted' },
   'open-external': { icon: 'external-link', tone: 'muted' },
   pin: { icon: 'pin', tone: 'muted' },
   unpin: { icon: 'pin-off', tone: 'muted' },
-  'chat-tab': { icon: 'message-square', tone: 'button' }
+  'chevron-right': { icon: 'chevron-right', tone: 'muted' },
+  'chevron-down': { icon: 'chevron-down', tone: 'muted' }
 }
 
 /** Each colour per Orca colour scheme; `muted` is close to Orca's muted text. */
 const COLORS: Record<Tone, { light: string; dark: string }> = {
   muted: { light: '#6b6b76', dark: '#9a9aa2' },
-  button: { light: '#212121', dark: '#a9b1d6' },
   success: { light: '#16a34a', dark: '#4ade80' },
   warning: { light: '#d97706', dark: '#fbbf24' },
   danger: { light: '#dc2626', dark: '#f87171' }
 }
-
-// The fill of Orca's solid xs IconButton, a 24px square with 6px corners around a 12px glyph.
-const BUTTON_FILL = { light: '#f5f5f5', dark: '#3b3e52' }
 
 // Drawn at 64px so they stay sharp at the panel's 12px.
 const SIZE = 64
@@ -57,11 +53,7 @@ try {
     for (const [scheme, color] of Object.entries(COLORS[tone])) {
       const page = join(work, `${asset}-${scheme}.html`)
       const glyph = svg.replace('stroke="currentColor"', `stroke="${color}"`)
-      const body =
-        tone === 'button'
-          ? `<div style="width:${SIZE}px;height:${SIZE}px;border-radius:${SIZE / 4}px;background:${BUTTON_FILL[scheme as 'light' | 'dark']};display:flex;align-items:center;justify-content:center">${glyph.replace(`width="${SIZE}"`, `width="${SIZE / 2}"`).replace(`height="${SIZE}"`, `height="${SIZE / 2}"`)}</div>`
-          : glyph
-      writeFileSync(page, `<!doctype html><body style="margin:0;background:transparent">${body}</body>`)
+      writeFileSync(page, `<!doctype html><body style="margin:0;background:transparent">${glyph}</body>`)
       execFileSync(
         CHROME,
         [
