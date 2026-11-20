@@ -21,9 +21,9 @@ export type QuickAction = {
 export type QuickActionInput = { id?: string; name: string; command: string; projectId: string; url?: string }
 
 /**
- * A dev server the panel can start: `up` whether the process on its port was started in the Orca
- * terminal it is watched in, `terminal` (before its address is known, whether that terminal is
- * open). See `serverState` in servers.ts.
+ * A dev server the panel can start: `up` whether its listener belongs to the watched Orca terminal
+ * (before its address is known, whether a foreground command runs there). `terminal` is that
+ * watched terminal while it is open. See `serverState` in servers.ts.
  */
 export type Server = {
   id: string

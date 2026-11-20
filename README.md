@@ -58,8 +58,9 @@ marks a running action: the process on its port was started in that terminal. Cl
 or stopping the server clears the dot, and another service holding the same port never counts.
 When a Run prints its URL on a different port, the action switches to it, unless you typed one.
 Its controls show the server's terminal, stop it by closing that terminal, and open the URL once
-known. A server you started yourself in an Orca terminal, from the project's folder, is watched in
-that terminal and gets the same controls. One started outside Orca, or by an agent, does not show as running.
+known. An action that has not watched a terminal yet can discover a server you started yourself
+in an Orca terminal, from the project's folder. It then keeps watching that terminal, including
+after the server stops. One started outside Orca, or by an agent, does not show as running.
 A stopped action has an edit button to change or delete it.
 
 ## Good to know

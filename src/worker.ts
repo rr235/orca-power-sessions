@@ -15,18 +15,19 @@ import {
   listenerPids,
   listenersInFolder,
   outputCursor,
+  portOf,
   printedUrl,
   processFolders,
   processTerminal,
   relearnedUrl,
   saveAction,
-  serverState,
   startStep,
   storedActions,
   terminalTail,
-  terminalTitle
+  terminalTitle,
+  watchServers
 } from './servers'
-import type { ServerProbe, ServerState } from './servers'
+import type { ServerObservation, ServerState } from './servers'
 import { pullRequestInfo } from './pulls'
 import { sessionUsage, tabPositions } from './usage'
 import { compactChat } from './chats'
@@ -80,22 +81,31 @@ export default function activate(orca: OrcaWorkerApi): void {
   const handles = (): Promise<Handles> => record<string>(HANDLES_KEY)
   const starts = (): Promise<Starts> => record<string | null>(STARTS_KEY)
 
+  // All storage read-modify-write operations share a queue, including concurrent actions.
+  let writes: Promise<unknown> = Promise.resolve()
+  function write<T>(edit: () => Promise<T>): Promise<T> {
+    const next = writes.then(edit)
+    writes = next.catch(() => undefined)
+    return next
+  }
+
   /** Marks a start, so the address its output prints replaces the stored one. */
   async function markStart(id: string, cursor: string | null): Promise<void> {
-    await orca.storage.set(STARTS_KEY, { ...(await starts()), [id]: cursor })
+    await write(async () => orca.storage.set(STARTS_KEY, { ...(await starts()), [id]: cursor }))
   }
 
   async function forgetStarts(ids: readonly string[]): Promise<void> {
-    const current = await starts()
-    if (ids.some((id) => id in current)) {
-      await orca.storage.set(STARTS_KEY, Object.fromEntries(Object.entries(current).filter(([id]) => !ids.includes(id))))
-    }
+    await write(async () => {
+      const current = await starts()
+      if (ids.some((id) => id in current)) {
+        await orca.storage.set(STARTS_KEY, Object.fromEntries(Object.entries(current).filter(([id]) => !ids.includes(id))))
+      }
+    })
   }
 
   // Changes to the stored list run one at a time, so a save and a learned address never overwrite each other.
-  let writes: Promise<unknown> = Promise.resolve()
   function change(edit: (actions: QuickAction[]) => QuickAction[]): Promise<QuickAction[]> {
-    const next = writes.then(async () => {
+    return write(async () => {
       const current = await actions()
       const edited = edit(current)
       if (JSON.stringify(edited) !== JSON.stringify(current)) {
@@ -103,8 +113,6 @@ export default function activate(orca: OrcaWorkerApi): void {
       }
       return edited
     })
-    writes = next.catch(() => undefined)
-    return next
   }
 
   /** The stored quick actions; the default servers before anything was saved. */
@@ -133,13 +141,13 @@ export default function activate(orca: OrcaWorkerApi): void {
   }
 
   /** The processes listening on `port`. */
-  async function listeners(port: number): Promise<number[] | null> {
+  async function listeners(port: number): Promise<number[]> {
     try {
       return listenerPids(await run('lsof', ['-nP', '-t', `-iTCP:${port}`, '-sTCP:LISTEN']))
     } catch (error) {
-      // lsof also fails when nothing listens; a missing lsof cannot tell.
+      // Missing or unreadable ownership never establishes that this action is running.
       logMissing(error)
-      return (error as { notFound?: boolean }).notFound ? null : []
+      return []
     }
   }
 
@@ -169,8 +177,8 @@ export default function activate(orca: OrcaWorkerApi): void {
     return terminalServing(pids, processOf, terminalsJson, agents)
   }
 
-  /** The real probe of a server's port, for `serverState` in servers.ts. */
-  function probe(terminalsJson: string, agents: () => Promise<ReadonlySet<string>>): ServerProbe {
+  /** Read observations separately from the terminal ownership policy in servers.ts. */
+  function probe(terminalsJson: string, agents: () => Promise<ReadonlySet<string>>) {
     // One process list per probe, read only when a terminal is asked about.
     let processes: Promise<string> | null = null
     const processList = () =>
@@ -178,13 +186,38 @@ export default function activate(orca: OrcaWorkerApi): void {
         logMissing(error)
         return ''
       }))
+    const running = async (terminal: string) => commandRunning(await processList(), paneOfTerminal(terminalsJson, terminal), terminal)
     return {
-      portOpen,
-      listeners,
-      terminalOf: async (pids) => servingTerminal(pids, terminalsJson, await agents()),
-      inFolder,
-      commandRunning: async (terminal) => commandRunning(await processList(), paneOfTerminal(terminalsJson, terminal), terminal)
+      commandRunning: running,
+      async observe(a: QuickAction, own: string | null, listening = false): Promise<ServerObservation> {
+        const port = portOf(a.url)
+        let serving: string | null = null
+        let sameFolder = false
+        if (port && ((await portOpen(port)) || listening)) {
+          const pids = await listeners(port)
+          if (pids.length) {
+            serving = await servingTerminal(pids, terminalsJson, await agents())
+            sameFolder = !own && serving !== null && (await inFolder(pids, a.path))
+          }
+        }
+        return { serving, inFolder: sameFolder, commandRunning: !port && own !== null && (await running(own)) }
+      }
     }
+  }
+
+  /** Save discovered terminals, including manual starts, and retain closed associations. */
+  function watchStates(list: QuickAction[], terminalsJson: string, observed: ServerObservation[]) {
+    return write(async () => {
+      const known = await handles()
+      const own = actionTerminals(await actions(), terminalsJson, known)
+      const watched = watchServers(list, own, observed)
+      const live = Object.fromEntries(Object.entries(watched.terminals).filter((entry): entry is [string, string] => entry[1] !== null))
+      const next = { ...known, ...live }
+      if (JSON.stringify(next) !== JSON.stringify(known)) {
+        await orca.storage.set(HANDLES_KEY, next)
+      }
+      return watched
+    })
   }
 
   /**
@@ -221,11 +254,13 @@ export default function activate(orca: OrcaWorkerApi): void {
     )
     if (paged.size) {
       // The next refresh reads on from there, unless a start marked the server again meanwhile.
-      const current = await starts()
-      const moved = [...paged].filter(([id, [from]]) => current[id] === from)
-      if (moved.length) {
-        await orca.storage.set(STARTS_KEY, { ...current, ...Object.fromEntries(moved.map(([id, [, to]]) => [id, to])) })
-      }
+      await write(async () => {
+        const current = await starts()
+        const moved = [...paged].filter(([id, [from]]) => current[id] === from)
+        if (moved.length) {
+          await orca.storage.set(STARTS_KEY, { ...current, ...Object.fromEntries(moved.map(([id, [, to]]) => [id, to])) })
+        }
+      })
     }
     if (!learned.size) {
       return list
@@ -252,7 +287,8 @@ export default function activate(orca: OrcaWorkerApi): void {
     list = await learnUrls(list, terminals)
     const agents = agentPanes(psJson)
     const ports = probe(terminalsJson, async () => agents)
-    const states = await Promise.all(list.map((a) => serverState(a, terminals, ports)))
+    const observed = await Promise.all(list.map((a) => ports.observe(a, terminals[a.id] ?? null)))
+    const { states } = await watchStates(list, terminalsJson, observed)
     const servers: Server[] = list.map((a, index) => ({
       id: a.id,
       name: a.name,
@@ -271,8 +307,10 @@ export default function activate(orca: OrcaWorkerApi): void {
     const mine = own[a.id] ?? null
     const agents = async () => agentPanes(await run('orca', ['worktree', 'ps', '--json']))
     const ports = probe(terminalsJson, agents)
-    const [state, running] = await Promise.all([serverState(a, own, ports, true), mine ? ports.commandRunning(mine) : Promise.resolve(false)])
-    return { ...state, own: mine, commandRunning: running }
+    const [observed, running] = await Promise.all([ports.observe(a, mine, true), mine ? ports.commandRunning(mine) : Promise.resolve(false)])
+    const watched = await watchStates([a], terminalsJson, [observed])
+    const state = watched.states[0]
+    return { ...state, own: watched.terminals[a.id] ?? null, commandRunning: running }
   }
 
   /** Where the terminal's output ends now, so the address the rerun prints is read from there. */
@@ -312,7 +350,7 @@ export default function activate(orca: OrcaWorkerApi): void {
     )
     const handle = handleOf(out)
     if (handle) {
-      await orca.storage.set(HANDLES_KEY, { ...(await handles()), [a.id]: handle })
+      await write(async () => orca.storage.set(HANDLES_KEY, { ...(await handles()), [a.id]: handle }))
     } else {
       orca.log(`no terminal handle in: ${out.slice(0, 300)}`)
     }
@@ -320,8 +358,10 @@ export default function activate(orca: OrcaWorkerApi): void {
   }
 
   async function forgetTerminal(id: string): Promise<void> {
-    const { [id]: _, ...rest } = await handles()
-    await orca.storage.set(HANDLES_KEY, rest)
+    await write(async () => {
+      const { [id]: _, ...rest } = await handles()
+      await orca.storage.set(HANDLES_KEY, rest)
+    })
     await forgetStarts([id])
   }
 
@@ -345,7 +385,7 @@ export default function activate(orca: OrcaWorkerApi): void {
     if (live) {
       await run('orca', ['terminal', 'close', '--terminal', live, '--json'])
     }
-    await forgetTerminal(id)
+    await forgetStarts([id])
     return null
   })
   orca.panels.handle('action.save', async (input) => {

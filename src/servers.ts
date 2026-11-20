@@ -14,7 +14,7 @@ export const terminalTitle = (action: Pick<QuickAction, 'id' | 'name'>): string 
 /**
  * Each action's own terminal in `orca terminal list --json`: the one the panel started it in
  * (`known`, by handle) while it is open in the action's folder, else one with its title. A closed
- * or disconnected terminal is none.
+ * or disconnected watched terminal stays null; an action never watched has no entry.
  */
 export function actionTerminals(
   actions: readonly Pick<QuickAction, 'id' | 'name' | 'path'>[],
@@ -22,9 +22,10 @@ export function actionTerminals(
   known: Readonly<Record<string, string>>
 ): Record<string, string | null> {
   return Object.fromEntries(
-    actions.map((a) => {
+    actions.flatMap((a) => {
       const handle = known[a.id]
-      return [a.id, handle && terminalAlive(terminalsJson, handle, a.path) ? handle : terminalByTitle(terminalsJson, terminalTitle(a), a.path)]
+      const live = handle && terminalAlive(terminalsJson, handle, a.path) ? handle : terminalByTitle(terminalsJson, terminalTitle(a), a.path)
+      return handle || live ? [[a.id, live]] : []
     })
   )
 }
@@ -220,64 +221,57 @@ export function processTerminal(output: string): ProcessTerminal {
   }
 }
 
-/** What the worker finds out about the processes on a port; the tests pass their own. */
-export type ServerProbe = {
-  /** Whether something answers on the port. */
-  portOpen(port: number): Promise<boolean>
-  /** The processes listening on the port, or null when lsof could not tell (missing, timed out). */
-  listeners(port: number): Promise<number[] | null>
-  /** The live Orca terminal all those processes were started in, or null (a daemon, an agent's, several). */
-  terminalOf(pids: readonly number[]): Promise<string | null>
-  /** Whether all those processes run in the folder or below it. */
-  inFolder(pids: readonly number[], path: string): Promise<boolean>
-  /** Whether a command, not just the shell, is running in the foreground of the terminal. */
-  commandRunning(terminal: string): Promise<boolean>
+/** Observations of a server's listener and foreground command, read by the worker. */
+export type ServerObservation = {
+  serving: string | null
+  inFolder: boolean
+  commandRunning: boolean
 }
 
-/** Whether a server is running, and the Orca terminal it is watched in. */
+/** Whether a server is running, and the Orca terminal it is watched in. Stop targets this terminal. */
 export type ServerState = { up: boolean; terminal: string | null }
+type WatchedAction = Pick<QuickAction, 'id' | 'path' | 'url'>
 
 /**
- * A quick action's server state. It is watched in one Orca terminal: the one the panel started it
- * in while that is open (`own`, every action's), else one the person started it in from its folder.
- * It is running only while the process listening on its port was started in that terminal, so a
- * closed terminal, a killed server, or another service on the port never counts. Before its address
- * is known, running means a command runs in its terminal. `listening` asks lsof even when the port
- * check fails, so a slow server is neither started twice nor left running when stopped.
+ * A known port runs only when its listener belongs to the watched terminal. Missing ownership
+ * never proves that. Before a URL is known, a foreground command in that terminal is enough.
+ * Only an action never watched can adopt a manually started server from its project folder.
  */
-export async function serverState(
-  a: Pick<QuickAction, 'id' | 'path' | 'url'>,
+export function serverState(
+  a: WatchedAction,
   own: Readonly<Record<string, string | null>>,
-  probe: ServerProbe,
-  listening = false
-): Promise<ServerState> {
+  observed: ServerObservation
+): ServerState {
   const mine = own[a.id] ?? null
-  const port = portOf(a.url)
-  if (!port) {
-    return { up: mine !== null && (await probe.commandRunning(mine)), terminal: mine }
-  }
   const stopped: ServerState = { up: false, terminal: mine }
-  const open = await probe.portOpen(port)
-  if (!open && !listening) {
-    return stopped
+  if (!portOf(a.url)) {
+    return { up: mine !== null && observed.commandRunning, terminal: mine }
   }
-  const pids = await probe.listeners(port)
-  if (pids === null) {
-    // Without lsof the listener is unknown: its own terminal running a command on an open port is the best sign.
-    return mine && open && (await probe.commandRunning(mine)) ? { up: true, terminal: mine } : stopped
-  }
-  if (!pids.length) {
-    return stopped
-  }
-  const serving = await probe.terminalOf(pids)
   if (mine) {
-    return serving === mine ? { up: true, terminal: mine } : stopped
+    return { up: observed.serving === mine, terminal: mine }
   }
-  const anothers = Object.entries(own).some(([id, terminal]) => id !== a.id && terminal === serving)
-  if (!serving || anothers || !(await probe.inFolder(pids, a.path))) {
+  const serving = observed.serving
+  if (a.id in own || !serving || Object.values(own).includes(serving) || !observed.inFolder) {
     return stopped
   }
   return { up: true, terminal: serving }
+}
+
+/** Reserve discovered terminals in action order, so two actions never adopt the same terminal. */
+export function watchServers(
+  actions: readonly WatchedAction[],
+  own: Readonly<Record<string, string | null>>,
+  observations: readonly ServerObservation[]
+): { states: ServerState[]; terminals: Record<string, string | null> } {
+  const terminals = { ...own }
+  const states = actions.map((a, index) => {
+    const state = serverState(a, terminals, observations[index])
+    if (state.terminal) {
+      terminals[a.id] = state.terminal
+    }
+    return state
+  })
+  return { states, terminals }
 }
 
 /**
