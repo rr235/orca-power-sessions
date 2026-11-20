@@ -15,8 +15,8 @@ test('finds Orca\'s runtime client in its new or old place, and says briefly why
   assert.equal(runFailure('', Object.assign(new Error('x'), { killed: true })), "Orca's runtime could not run the request: it timed out.")
   assert.equal(runFailure('', new Error('x')), "Orca's runtime could not run the request: it exited without an answer.")
 })
-import { focusProblem, folderAt, selectedOf } from './tabs'
-import { tabOfPane } from './overview'
+import { focusProblem, folderAt, selectedOf, tabCountOf } from './tabs'
+import { defaultAgent, tabOfPane } from './overview'
 
 test('finds the folder workspace at a path, so a folder session can be shown', () => {
   const rows = [
@@ -49,6 +49,20 @@ test('reads the focused workspace and the tab Orca shows in it', () => {
   assert.equal(selectedOf('null'), null, 'no workspace is focused')
   assert.equal(selectedOf(JSON.stringify({ error: { code: 'method_not_found', message: 'x' } })), null)
   assert.equal(selectedOf(''), null)
+})
+
+test('reads how many tabs a workspace has and the agent a new tab starts', () => {
+  assert.equal(tabCountOf(JSON.stringify({ count: 0 })), 0, 'an empty workspace')
+  assert.equal(tabCountOf(JSON.stringify({ count: 3 })), 3)
+  assert.equal(tabCountOf(JSON.stringify({ count: null })), null, 'Orca answered without tabs')
+  assert.equal(tabCountOf(JSON.stringify({ error: { code: 'selector_not_found', message: 'selector_not_found' } })), null)
+  assert.equal(tabCountOf(''), null)
+  const installed = (agents: unknown[]) => JSON.stringify({ ok: true, result: { agents } })
+  assert.equal(defaultAgent(installed([{ id: 'claude', default: true }, { id: 'codex', default: false }])), 'claude')
+  assert.equal(defaultAgent(installed([{ id: 'claude', default: false }, { id: 'codex', default: true }])), 'codex')
+  assert.equal(defaultAgent(installed([{ id: 'claude', default: false }])), null, 'no default set')
+  assert.equal(defaultAgent('{}'), null, 'agent installed failed')
+  assert.equal(defaultAgent('not json'), null)
 })
 
 test('signs a chat compact the way Orca does, and reads its answer', () => {

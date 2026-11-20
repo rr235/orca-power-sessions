@@ -191,7 +191,7 @@ const stopServer = (server: Server) =>
   act(`server:${server.id}`, () => plugin.request('server.stop', { id: server.id }), `Could not stop ${server.name}.`)
 const openProject = (project: Project) =>
   project.path
-    ? act(`open:${project.id}`, () => plugin.request('project.open', { path: project.path as string }), `Could not open ${project.name}.`)
+    ? act(`open:${project.id}`, () => plugin.request('project.open', { path: project.path as string }, { timeoutMs: 50000 }), `Could not open ${project.name}.`)
     : Promise.resolve()
 /** The tab id Orca's runtime gives a session's tab: `agent-session:<id>` for a chat, else the pane key's tab. */
 export const sessionTab = (session: Session) => tabOfPane(session.key)?.tabId ?? session.key.split(':')[0]
