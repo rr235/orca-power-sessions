@@ -1,6 +1,6 @@
-// Serves the Power Sessions panel. Orca transpiles this file when it loads: no build step. Plugins
-// have no host method for projects, all workspaces or terminal creation, so the worker asks the
-// `orca` CLI, which runs as the same user.
+// Serves the Power Sessions panel. Orca transpiles this file when it loads: no build step. Most of
+// what the panel reads and does goes through the `orca` CLI, which runs as the same user; showing a
+// folder workspace, which the CLI refuses, goes through the host's `workspace.open`.
 import { randomUUID } from 'node:crypto'
 import { createConnection } from 'node:net'
 import type { OrcaWorkerApi } from 'orca/worker'
@@ -11,7 +11,7 @@ import { linkProjects, listenerPids, portOf, printedUrl, processTerminal, saveAc
 import { pullRequestInfo } from './pulls'
 import { sessionUsage, tabPositions } from './usage'
 import { compactChat } from './chats'
-import { focusTab, selectedTab } from './tabs'
+import { focusTab, folderAt, selectedTab } from './tabs'
 
 // The quick actions, as the person last saved them.
 const ACTIONS_KEY = 'quickActions'
@@ -303,11 +303,25 @@ export default function activate(orca: OrcaWorkerApi): void {
     return null
   })
   orca.panels.handle('session.selected', () => selectedTab())
+  /**
+   * Shows the workspace at `path` in Orca's window and answers the selector Orca's runtime knows
+   * it by. The CLI refuses to show a folder workspace, so a folder goes through `workspace.open`.
+   */
+  async function showWorkspace(path: string): Promise<string> {
+    const folder = folderAt((await orca.host.call('workspace.list')).workspaces, path)
+    if (folder) {
+      await orca.host.call('workspace.open', { workspaceId: folder })
+      return folder
+    }
+    await run('orca', ['worktree', 'activate', '--worktree', `path:${path}`, '--json'])
+    return `path:${path}`
+  }
+
   orca.panels.handle('session.focus', async ({ key, path }) => {
     // Orca focuses a tab only in the workspace on screen, so show the workspace first.
-    await run('orca', ['worktree', 'activate', '--worktree', `path:${path}`, '--json'])
+    const workspace = await showWorkspace(path)
     try {
-      await focusTab(path, key)
+      await focusTab(workspace, key)
     } catch (error) {
       orca.log(`focus ${key}: ${(error as Error).message}`)
       throw error
@@ -315,7 +329,7 @@ export default function activate(orca: OrcaWorkerApi): void {
     return null
   })
   orca.panels.handle('project.open', async ({ path }) => {
-    await run('orca', ['worktree', 'activate', '--worktree', `path:${path}`, '--json'])
+    await showWorkspace(path)
     return null
   })
 }

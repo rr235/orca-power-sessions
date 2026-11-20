@@ -15,8 +15,20 @@ test('finds Orca\'s runtime client in its new or old place, and says briefly why
   assert.equal(runFailure('', Object.assign(new Error('x'), { killed: true })), "Orca's runtime could not run the request: it timed out.")
   assert.equal(runFailure('', new Error('x')), "Orca's runtime could not run the request: it exited without an answer.")
 })
-import { focusProblem, selectedOf } from './tabs'
+import { focusProblem, folderAt, selectedOf } from './tabs'
 import { tabOfPane } from './overview'
+
+test('finds the folder workspace at a path, so a folder session can be shown', () => {
+  const rows = [
+    { id: 'repo-1::/w/platform', kind: 'worktree' as const, path: '/w/platform', hostId: 'local' },
+    { id: 'folder:remote', kind: 'folder' as const, path: '/bots/mountin-bot', hostId: 'ssh:box' },
+    { id: 'folder:bot', kind: 'folder' as const, path: '/bots/mountin-bot', hostId: null }
+  ]
+  assert.equal(folderAt(rows, '/bots/mountin-bot'), 'folder:bot', 'the folder on this machine')
+  assert.equal(folderAt(rows, '/w/platform'), null, 'a Git worktree stays on the CLI')
+  assert.equal(folderAt(rows, '/elsewhere'), null, 'nothing listed there')
+  assert.equal(folderAt(rows.slice(0, 2), '/bots/mountin-bot'), null, 'a folder only on another host')
+})
 
 test('finds the tab of a session and reads the focus answer', () => {
   assert.deepEqual(tabOfPane('structured-agent-session-claude_abc_123:leaf-1'), { tabId: 'agent-session:claude_abc_123' })

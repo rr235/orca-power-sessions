@@ -42,16 +42,29 @@ export function focusProblem(output: string): string | null {
   return parsed.error?.code === 'method_not_found' ? 'This Orca build cannot focus a tab from a plugin.' : message || 'Orca did not focus the tab.'
 }
 
+/** A row of the host's `workspace.list`, as far as finding a folder workspace needs it. */
+export type WorkspaceRow = { id: string; kind: 'worktree' | 'folder'; path: string; hostId: string | null }
+
 /**
- * Focuses the tab of the session in `paneKey`, in the workspace at `path`. The workspace must
- * already be the one Orca shows: the runtime focuses a tab only within the workspace on screen.
+ * The id of the folder workspace at `path` on this machine, or null when the path is a Git
+ * worktree or Orca lists nothing there. A folder's id (`folder:<id>`) is also its runtime selector.
  */
-export async function focusTab(path: string, paneKey: string): Promise<void> {
+export function folderAt(rows: readonly WorkspaceRow[], path: string): string | null {
+  const row = rows.find((r) => r.kind === 'folder' && r.path === path && (r.hostId === null || r.hostId === 'local'))
+  return row?.id ?? null
+}
+
+/**
+ * Focuses the tab of the session in `paneKey`, in the workspace `workspace` selects (`path:<path>`
+ * or `folder:<id>`). The workspace must already be the one Orca shows: the runtime focuses a tab
+ * only within the workspace on screen.
+ */
+export async function focusTab(workspace: string, paneKey: string): Promise<void> {
   const tab = tabOfPane(paneKey)
   if (!tab) {
     throw new Error('This session has no tab Orca can focus.')
   }
-  const params = { worktree: `path:${path}`, ...tab, intent: 'user', navigation: 'host' }
+  const params = { worktree: workspace, ...tab, intent: 'user', navigation: 'host' }
   const problem = focusProblem(await runInOrca(SCRIPT, { params }, TIMEOUT_MS))
   if (problem) {
     throw new Error(problem)
