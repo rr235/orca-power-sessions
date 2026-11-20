@@ -3,6 +3,7 @@ import { assert, mockHost, mount, test } from 'orca/testing'
 import { storage } from 'orca'
 import { DEMO, DEMO_USAGE, DEMO_WORKTREES } from './fixtures'
 import * as panel from './panel'
+import { saveAction, storedActions } from './servers'
 
 /** The pressable row holding the image named `alt`: an image's alt is not a label. */
 function pinControl(view: Awaited<ReturnType<typeof mount>>, alt: string) {
@@ -19,6 +20,41 @@ function chevron(view: Awaited<ReturnType<typeof mount>>, title: string) {
   const alt = view.findAll({ type: 'Image' }).find((i) => new RegExp(`^(Show|Hide) details of ${title}$`).test(String(i.props.alt)))?.props.alt
   return alt ? pinControl(view, String(alt)) : null
 }
+
+test('single-line steps keep Input rows while legacy multiline commands save unchanged', async () => {
+  const project = DEMO.projects.find((p) => p.id === 'github:rr235/blog')!
+  const command = 'if true; then\n  bun run dev\nfi'
+  let actions = storedActions([{ id: 'legacy', name: 'Legacy', command, projectId: project.id, path: project.path, url: 'http://localhost:4000' }])!
+  actions.push({ ...actions[0], id: 'single', name: 'Single', command: 'bun run dev', steps: ['bun run dev'] })
+  const host = mockHost({
+    requests: {
+      'overview.load': () => ({ ...DEMO, sessions: [], servers: actions.map((a) => ({ ...a, up: false, terminal: null })) }),
+      'session.selected': () => null,
+      'action.save': (input) => {
+        actions = saveAction(actions, input, [project], 'unused')
+        return null
+      }
+    }
+  })
+  const view = await mount(panel, { host })
+  try {
+    await view.press({ label: 'Edit Single' })
+    assert.equal(view.find({ type: 'Input', label: 'Step 1' } as never)?.props.value, 'bun run dev')
+    assert.equal(view.find({ type: 'Textarea', label: 'Step 1' } as never), null)
+    await view.press({ label: 'Edit Legacy' })
+    assert.equal(view.find({ type: 'Textarea', label: 'Step 1' } as never)?.props.value, command)
+    assert.equal(view.find({ type: 'Textarea', label: 'Step 1' } as never)?.props.rows, 2)
+    assert.equal(view.find({ type: 'Input', label: 'Step 1' } as never), null)
+    assert.equal(view.find({ label: 'Step 2' }), null)
+    await view.type({ type: 'Input', label: 'Name' } as never, 'Renamed', { replace: true })
+    await view.press({ type: 'Button', text: 'Save' })
+    assert.deepEqual([actions[0].name, actions[0].command, actions[0].steps, actions[0].url], ['Renamed', command, [command], 'http://localhost:4000'])
+    assert.deepEqual(view.warnings, [])
+    assert.deepEqual(view.errors, [])
+  } finally {
+    await view.unmount()
+  }
+})
 
 test('shows servers, sessions and projects, and starts a server', async () => {
   const started: string[] = []
@@ -558,6 +594,7 @@ test('edits, adds and deletes quick actions', async () => {
     assert.equal(heading?.props.tone, undefined)
     // Example placeholders, and a muted note under the title for what they leave out.
     assert.equal(view.find({ type: 'Input', label: 'Step 1' } as never)?.props.placeholder, 'npm run dev')
+    assert.equal(view.find({ type: 'Textarea', label: 'Step 1' } as never), null, 'single-line steps keep Input rows')
     assert.equal(view.find({ type: 'Input', label: 'URL' } as never)?.props.placeholder, 'URL (optional)')
     const note = view.find({ type: 'Text', text: "The commands run serially in order in the project's main checkout." })
     const urlNote = view.find({ type: 'Text', text: 'Add a URL only if it differs from the one the server prints.' })

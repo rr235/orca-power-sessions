@@ -21,6 +21,7 @@ import {
   Skeleton,
   Stack,
   Text,
+  Textarea,
   update,
   type PanelContext
 } from 'orca'
@@ -70,7 +71,7 @@ const usageLoading = atom<Record<string, boolean>>({})
 const prLoading = atom<Record<string, boolean>>({})
 const loadError = atom<string | null>(null)
 const busy = atom<Record<string, boolean>>({})
-// The quick action whose form is open above Add action: its id, NEW_ACTION for a new one, or null.
+// The quick action whose form is open: its id, NEW_ACTION for a new one, or null.
 const NEW_ACTION = ':new'
 const editing = atom<string | null>(null)
 const closeForm = () => set(editing, null)
@@ -260,9 +261,7 @@ const compactSession = (session: Session) =>
 
 /** Opens the form for an action, or for a new one. */
 function editAction(server: Server | null): void {
-  // A step's rows are single lines: a command saved over several lines shows as a step per line.
-  const steps = (server?.steps ?? []).flatMap((step) => step.split('\n')).map((step) => step.trim()).filter(Boolean)
-  set(draft, { name: server?.name ?? '', steps: steps.length ? steps : [''], projectId: server?.projectId ?? '', url: server?.url ?? '' })
+  set(draft, { name: server?.name ?? '', steps: server?.steps ?? [''], projectId: server?.projectId ?? '', url: server?.url ?? '' })
   set(formError, null)
   set(editing, server?.id ?? NEW_ACTION)
 }
@@ -718,22 +717,25 @@ function StepRows({ steps, onChange }: { steps: string[]; onChange: (steps: stri
   const several = steps.length > 1
   return (
     <Box gap="xs">
-      {steps.map((step, i) => (
-        <Box key={i} direction="row" align="center" gap="xs">
-          <Box grow minWidth={0}>
-            <Input
-              label={`Step ${i + 1}`}
-              labelHidden
-              value={step}
-              placeholder={i === 0 ? 'npm run dev' : 'Next command'}
-              onChange={(value) => onChange(steps.map((s, j) => (j === i ? value : s)))}
-            />
+      {steps.map((step, i) => {
+        const field = {
+          label: `Step ${i + 1}`,
+          labelHidden: true,
+          value: step,
+          placeholder: i === 0 ? 'npm run dev' : 'Next command',
+          onChange: (value: string) => onChange(steps.map((s, j) => (j === i ? value : s)))
+        }
+        return (
+          <Box key={i} direction="row" align="center" gap="xs">
+            <Box grow minWidth={0}>
+              {step.includes('\n') ? <Textarea {...field} rows={2} /> : <Input {...field} />}
+            </Box>
+            {several ? (
+              <IconButton icon="close" label={`Remove step ${i + 1}`} size="xs" variant="ghost" onPress={() => onChange(steps.filter((_, j) => j !== i))} />
+            ) : null}
           </Box>
-          {several ? (
-            <IconButton icon="close" label={`Remove step ${i + 1}`} size="xs" variant="ghost" onPress={() => onChange(steps.filter((_, j) => j !== i))} />
-          ) : null}
-        </Box>
-      ))}
+        )
+      })}
       <Box direction="row">
         <Button variant="ghost" size="xs" tooltip="Add a command to run after the last one" onPress={() => onChange([...steps, ''])}>
           Add step +
