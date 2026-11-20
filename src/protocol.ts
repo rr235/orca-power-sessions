@@ -3,7 +3,7 @@
 /**
  * A quick action as the person edits it and the worker stores it: a dev server's `command`, run in
  * `path`, the main checkout of the Orca project `projectId`. `url` is the address the server
- * printed when it started (or the one typed), null until it is known.
+ * printed when it last started, or the one typed (`urlTyped`), null until it is known.
  */
 export type QuickAction = {
   id: string
@@ -12,6 +12,8 @@ export type QuickAction = {
   projectId: string | null
   path: string
   url: string | null
+  /** The person typed `url`: a start never replaces it with a printed one. */
+  urlTyped?: boolean
 }
 
 /** What the panel sends to add (no `id`) or change a quick action. */
@@ -19,9 +21,9 @@ export type QuickAction = {
 export type QuickActionInput = { id?: string; name: string; command: string; projectId: string; url?: string }
 
 /**
- * A dev server the panel can start: `up` whether its port answers (however
- * it was started; before its address is known, whether its terminal is open), `terminal` the Orca
- * terminal the panel started it in, if still open.
+ * A dev server the panel can start: `up` whether its listener belongs to the watched Orca terminal
+ * (before its address is known, whether a foreground command runs there). `terminal` is that
+ * watched terminal while it is open. See `serverState` in servers.ts.
  */
 export type Server = {
   id: string

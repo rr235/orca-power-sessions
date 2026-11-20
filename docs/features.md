@@ -44,8 +44,9 @@ Press **Compact** in a session's details to compact its conversation without swi
 
 Create quick actions for the scripts you run often in your projects, such as a dev server.
 
-- **Run and stop**: start a script with one press. Stop closes the terminal the server runs in, also when you started it yourself in an Orca terminal. A server started outside Orca, or by an agent, has no Stop control. Listeners on the same port must all resolve to one terminal for Stop to appear.
-- **Running at a glance**: a green dot marks each running action, and one beside the section title shows that something is running.
+- **Run and stop**: start a script with one press. Each action watches one Orca terminal: the one Run opened, or, before it has watched one, a server terminal discovered in the project's folder. The association stays after the server exits or the terminal closes. Stop closes only that terminal, and Run opens a new one when it is closed.
+- **Running at a glance**: a green dot marks each running action, and one beside the section title shows that something is running. An action runs only while the process on its port was started in its terminal: closing the terminal or stopping the server clears the dot, and another service on the same port never counts. A server started outside Orca, or by an agent, does not show as running.
+- **URL learned at each Run**: when the server prints its URL on a different port, the action switches to it, unless you typed one.
 - **Terminal and URL**: show the action’s tracked terminal, or open its URL in your browser once known.
 - **Edit**: change an action's project, name, command or URL.
 

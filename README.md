@@ -53,11 +53,14 @@ Power Sessions does not create sessions or worktrees. Open them in Orca as usual
 3. Add a URL only if it differs from the one the server prints.
 4. Press **Add +**, then the action’s **Run** button.
 
-The command runs in the project’s main checkout. A green dot marks a running action. Its controls
-show the server's terminal, stop it by closing that terminal, and open the URL once known. A server
-started in another Orca terminal gets the same controls, found through the process on its port.
-One started outside Orca, or by an agent, has only the URL control. If listeners on the same port
-cannot all be traced to one terminal, the action also has only the URL control.
+The command runs in the project’s main checkout, in a terminal the action then watches. A green dot
+marks a running action: the process on its port was started in that terminal. Closing the terminal
+or stopping the server clears the dot, and another service holding the same port never counts.
+When a Run prints its URL on a different port, the action switches to it, unless you typed one.
+Its controls show the server's terminal, stop it by closing that terminal, and open the URL once
+known. An action that has not watched a terminal yet can discover a server you started yourself
+in an Orca terminal, from the project's folder. It then keeps watching that terminal, including
+after the server stops. One started outside Orca, or by an agent, does not show as running.
 A stopped action has an edit button to change or delete it.
 
 ## Good to know

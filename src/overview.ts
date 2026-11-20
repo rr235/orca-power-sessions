@@ -312,6 +312,13 @@ export function agentPanes(psJson: string): Set<string> {
   return new Set(rows.flatMap((row) => (row.agents ?? []).flatMap((agent) => (agent.paneKey ? [agent.paneKey] : []))))
 }
 
+/** The pane of a live terminal, `<tabId>:<leafId>`, as its processes carry it in `ORCA_PANE_KEY`. */
+export function paneOfTerminal(terminalsJson: string, handle: string): string | null {
+  const terminals = result<{ terminals?: TerminalRow[] }>(terminalsJson).terminals ?? []
+  const found = terminals.find((t) => t.handle === handle && t.connected !== false)
+  return found?.tabId && found.leafId ? `${found.tabId}:${found.leafId}` : null
+}
+
 /** Whether a terminal handle is still live in this checkout in `orca terminal list --json`. */
 export function terminalAlive(terminalsJson: string, handle: string, path: string): boolean {
   const terminals = result<{ terminals?: TerminalRow[] }>(terminalsJson).terminals ?? []
