@@ -48,13 +48,14 @@ Create quick actions for the scripts you run often in your projects, such as a d
 - **Running at a glance**: a green dot marks each running action, and one beside the section title shows that something is running. An action runs only while the process on its port was started in its terminal: closing the terminal or stopping the server clears the dot, and another service on the same port never counts. A server started outside Orca, or by an agent, does not show as running.
 - **URL learned at each Run**: when the server prints its URL on a different port, the action switches to it, unless you typed one.
 - **Terminal and URL**: show the action’s tracked terminal, or open its URL in your browser once known.
-- **Edit**: change an action's project, name, command or URL.
+- **Steps**: an action can run several commands in order in its terminal, each once the one before succeeds, such as `bun install`, then `bun run dev`.
+- **Edit**: change an action's project, name, steps or URL. Remove a step with its ×.
 
 | Dark | Light |
 | --- | --- |
 | ![Quick actions with two running servers and two stopped ones, dark theme](../assets/screenshots/quick-actions-list-dark.png) | ![Quick actions with two running servers and two stopped ones, light theme](../assets/screenshots/quick-actions-list-light.png) |
 
-To add one, press the **+** beside **Add action**, pick the project, then give it a name and the command. Add a URL only if it differs from the one the server prints. Press **Add +** to save it. The command runs in the project’s main checkout.
+To add one, press the **+** beside **Add action**, pick the project, then give it a name and the command. Press **Add step +** for another command to run after it. Add a URL only if it differs from the one the server prints. Press **Add +** to save it. The commands run in the project’s main checkout.
 
 | Dark | Light |
 | --- | --- |

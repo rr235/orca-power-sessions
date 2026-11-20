@@ -1,13 +1,16 @@
 // The panel <-> worker contract, declared once: src/panel.tsx and src/worker.ts both read it.
 
 /**
- * A quick action as the person edits it and the worker stores it: a dev server's `command`, run in
- * `path`, the main checkout of the Orca project `projectId`. `url` is the address the server
- * printed when it last started, or the one typed (`urlTyped`), null until it is known.
+ * A quick action as the person edits it and the worker stores it: a dev server's `steps`, commands
+ * run in order in one terminal at `path`, the main checkout of the Orca project `projectId`, each
+ * after the one before succeeds. `url` is the address the server printed when it last started, or
+ * the one typed (`urlTyped`), null until it is known.
  */
 export type QuickAction = {
   id: string
   name: string
+  steps: string[]
+  /** `steps` as one command (`runCommand`), stored so a version before steps still reads the action. */
   command: string
   projectId: string | null
   path: string
@@ -18,7 +21,7 @@ export type QuickAction = {
 
 /** What the panel sends to add (no `id`) or change a quick action. */
 /** `url` set (even empty) replaces the address: empty means read it from the output at the next Run. */
-export type QuickActionInput = { id?: string; name: string; command: string; projectId: string; url?: string }
+export type QuickActionInput = { id?: string; name: string; steps: string[]; projectId: string; url?: string }
 
 /**
  * A dev server the panel can start: `up` whether its listener belongs to the watched Orca terminal
@@ -28,7 +31,7 @@ export type QuickActionInput = { id?: string; name: string; command: string; pro
 export type Server = {
   id: string
   name: string
-  command: string
+  steps: string[]
   projectId: string | null
   url: string | null
   up: boolean

@@ -3,10 +3,10 @@ import type { Overview, Server, SessionUsage } from './protocol'
 
 const now = Date.now()
 
-const server = (id: string, name: string, command: string, projectId: string | null, url: string | null, up: boolean, terminal: string | null = null): Server => ({
+const server = (id: string, name: string, steps: string[], projectId: string | null, url: string | null, up: boolean, terminal: string | null = null): Server => ({
   id,
   name,
-  command,
+  steps,
   projectId,
   url,
   up,
@@ -14,11 +14,11 @@ const server = (id: string, name: string, command: string, projectId: string | n
 })
 
 const DEMO_SERVERS: Server[] = [
-  server('platform', 'Platform', 'bun run stack:up && bun run dev:platform', 'github:mountin-io/platform', 'http://demo.localhost:3100', true, 'term_demo'),
-  server('primer', 'Primer', 'bun run dev:primer', 'github:mountin-io/platform', 'http://localhost:3200', false),
-  server('website', 'Website', 'bun run dev:website', 'github:mountin-io/platform', 'http://localhost:3300', true),
-  server('knowledgebase', 'KB', 'bun run dev', null, 'http://localhost:3400', false),
-  server('blog', 'Blog', 'bun run dev', 'github:rr235/blog', null, false)
+  server('platform', 'Platform', ['bun run stack:up', 'bun run dev:platform'], 'github:mountin-io/platform', 'http://demo.localhost:3100', true, 'term_demo'),
+  server('primer', 'Primer', ['bun run dev:primer'], 'github:mountin-io/platform', 'http://localhost:3200', false),
+  server('website', 'Website', ['bun run dev:website'], 'github:mountin-io/platform', 'http://localhost:3300', true),
+  server('knowledgebase', 'KB', ['bun run dev'], null, 'http://localhost:3400', false),
+  server('blog', 'Blog', ['bun run dev'], 'github:rr235/blog', null, false)
 ]
 
 export const DEMO: Overview = {

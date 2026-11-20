@@ -20,6 +20,7 @@ import {
   processFolders,
   processTerminal,
   relearnedUrl,
+  runCommand,
   saveAction,
   startStep,
   storedActions,
@@ -292,7 +293,7 @@ export default function activate(orca: OrcaWorkerApi): void {
     const servers: Server[] = list.map((a, index) => ({
       id: a.id,
       name: a.name,
-      command: a.command,
+      steps: a.steps,
       projectId: a.projectId,
       url: a.url,
       ...states[index]
@@ -337,7 +338,7 @@ export default function activate(orca: OrcaWorkerApi): void {
     if (step === 'rerun' && own) {
       // Its terminal is open but the server stopped: run the command there again.
       await markStart(a.id, await outputEnd(own))
-      await run('orca', ['terminal', 'send', '--terminal', own, '--text', a.command, '--enter', '--json'])
+      await run('orca', ['terminal', 'send', '--terminal', own, '--text', runCommand(a.steps), '--enter', '--json'])
       await run('orca', ['terminal', 'switch', '--terminal', own, '--json'])
       return null
     }
@@ -345,7 +346,7 @@ export default function activate(orca: OrcaWorkerApi): void {
     await markStart(a.id, null)
     const out = await run(
       'orca',
-      ['terminal', 'create', '--worktree', `path:${a.path}`, '--title', terminalTitle(a), '--command', a.command, '--focus', '--json'],
+      ['terminal', 'create', '--worktree', `path:${a.path}`, '--title', terminalTitle(a), '--command', runCommand(a.steps), '--focus', '--json'],
       30000
     )
     const handle = handleOf(out)
