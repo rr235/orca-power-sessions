@@ -1,6 +1,7 @@
 // `orca plugin test .` runs this in Node with the same runtime and checks Orca uses.
 import { assert, mockHost, mount, test } from 'orca/testing'
 import { storage } from 'orca'
+import { mock } from 'node:test'
 import { DEMO, DEMO_USAGE, DEMO_WORKTREES } from './fixtures'
 import * as panel from './panel'
 import { saveAction, storedActions } from './servers'
@@ -56,76 +57,69 @@ test('single-line steps keep Input rows while legacy multiline commands save unc
   }
 })
 
-test('shows Stop disabled at once on Run, and enabled once the command runs', async () => {
-  // The command starts after the look that follows Run, as a new terminal's shell does.
-  let loadsAfterStart = -1
-  let fails = false
-  const primer = (up: boolean) => ({ ...DEMO, servers: DEMO.servers.map((s) => (s.id === 'primer' ? { ...s, up, terminal: up ? 'term_primer' : null } : s)) })
-  const host = mockHost({
-    requests: {
-      'overview.load': () => primer(loadsAfterStart >= 0 && ++loadsAfterStart > 1),
-      'session.usage': () => ({}),
-      'pr.info': () => ({}),
-      'server.start': () => {
-        if (fails) {
-          throw new Error('no terminal')
-        }
-        loadsAfterStart = 0
-        return null
-      }
-    }
-  })
+test('quick actions show startup, completion and failure, and stop polling when idle or unmounted', async () => {
+  mock.timers.enable({ apis: ['setTimeout', 'setInterval'] })
+  let up = false
+  let fail = false
+  let loads = 0
+  const action = { id: 'sync', name: 'Sync', steps: ['bun build'], projectId: null, url: null, terminal: 'term_sync' }
+  const host = mockHost({ requests: {
+    'overview.load': () => { loads++; return { ...DEMO, sessions: [], servers: [DEMO.servers[0], { ...action, up }] } },
+    'session.selected': () => null,
+    'server.start': () => { if (fail) throw new Error('no terminal'); return null }
+  } })
   const view = await mount(panel, { host })
-  const stop = () => view.find({ type: 'IconButton', label: 'Stop Primer' } as never)
+  const tick = async (ms: number) => { mock.timers.tick(ms); await view.settled() }
   try {
-    // A start that fails shows Run again.
-    fails = true
-    await view.press(view.find({ label: 'Run Primer' }) as never)
-    assert.equal(stop(), null)
-    assert.ok(view.find({ label: 'Run Primer' }))
-    fails = false
-
-    await view.press(view.find({ label: 'Run Primer' }) as never)
-    assert.equal(view.find({ label: 'Run Primer' }), null, 'Run gives way at once')
-    assert.deepEqual([stop()?.props.disabled, stop()?.props.tooltip], [true, 'Starting'], 'a disabled Stop until it runs')
-    await new Promise((resolve) => setTimeout(resolve, 1600))
-    await view.settled()
-    assert.equal(stop()?.props.disabled, false, 'Stop works at the next look, a second later')
-    const loads = loadsAfterStart
-    await new Promise((resolve) => setTimeout(resolve, 1200))
-    assert.equal(loadsAfterStart, loads, 'no more looks once it runs')
+    await view.press({ label: 'Run Sync' })
+    assert.deepEqual([view.find({ label: 'Stop Sync' })?.disabled, view.find({ label: 'Stop Sync' })?.props.tooltip], [true, 'Starting'])
+    up = true
+    await tick(1000)
+    assert.equal(view.find({ label: 'Stop Sync' })?.disabled, false)
+    up = false
+    await tick(1000)
+    assert.ok(view.find({ label: 'Run Sync' }))
+    const idle = loads
+    await tick(2000)
+    assert.equal(loads, idle, 'address-based servers keep the normal cycle')
+    fail = true
+    await view.press({ label: 'Run Sync' })
+    assert.ok(view.find({ label: 'Run Sync' }))
+    fail = false
+    await view.press({ label: 'Run Sync' })
   } finally {
     await view.unmount()
+    const closed = loads
+    mock.timers.tick(11000)
+    mock.timers.reset()
+    assert.equal(loads, closed, 'queued boot checks stop at teardown')
   }
 })
 
-test('shows Run again soon after a command with no address ends, and leaves servers to the usual cycle', async () => {
+test('a slow command refresh completes without overlapping polls', async () => {
+  mock.timers.enable({ apis: ['setTimeout', 'setInterval'] })
   let loads = 0
-  let syncRunning = true
-  const sync = { id: 'sync', name: 'Sync', steps: ['git pull', 'bun run build'], projectId: null, url: null, up: true, terminal: 'term_sync' }
-  const host = mockHost({
-    requests: {
-      'overview.load': () => {
-        loads++
-        // Platform stays up on its address; Sync's command ends after the first look.
-        return { ...DEMO, servers: [...DEMO.servers.filter((s) => s.id === 'platform'), { ...sync, up: syncRunning }] }
-      },
-      'session.usage': () => ({}),
-      'pr.info': () => ({})
-    }
-  })
+  const action = { id: 'sync', name: 'Sync', steps: ['bun build'], projectId: null, url: null, terminal: 'term_sync' }
+  const host = mockHost({ requests: {
+    'overview.load': async () => {
+      const first = ++loads === 1
+      if (!first) await new Promise((resolve) => setTimeout(resolve, 2300))
+      return { ...DEMO, sessions: [], servers: [{ ...action, up: first }] }
+    },
+    'session.selected': () => null
+  } })
   const view = await mount(panel, { host })
   try {
-    assert.ok(view.find({ label: 'Stop Sync' }))
-    syncRunning = false
-    await new Promise((resolve) => setTimeout(resolve, 2400))
+    mock.timers.tick(2000)
+    await new Promise((resolve) => setImmediate(resolve))
+    mock.timers.tick(2000)
+    assert.equal(loads, 2, 'one overview request stays in flight')
+    mock.timers.tick(300)
     await view.settled()
-    assert.ok(view.find({ label: 'Run Sync' }), 'Run is back within about two seconds')
-    const after = loads
-    await new Promise((resolve) => setTimeout(resolve, 2400))
-    assert.equal(loads, after, 'a server on its address waits for the usual cycle')
+    assert.ok(view.find({ label: 'Run Sync' }))
   } finally {
     await view.unmount()
+    mock.timers.reset()
   }
 })
 

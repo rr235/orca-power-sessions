@@ -30,11 +30,10 @@ import type { Overview, Project, QuickActionInput, PullRequestInfo, Selected, Se
 import { runCommand } from './servers'
 import { normalUrl } from './url'
 import { Icon, SessionDetails } from './session-details'
+import { startingActions, watchQuickActions } from './quick-action-polling'
 
 const REFRESH_MS = 15000
 const EVENT_DELAY_MS = 400
-// How often the panel looks while an action with no address runs its command.
-const COMMAND_MS = 2000
 // How often the panel asks which tab Orca shows; each read starts a process under Orca's Node.
 const SELECTED_MS = 2000
 // After a press shows a tab, how long the panel trusts that over a read that may predate the switch.
@@ -164,50 +163,31 @@ function loadSoon(): void {
 }
 
 /** Runs a worker action with `key` marked busy, then refreshes. */
-async function act(key: string, action: () => Promise<unknown>, failure: string | ((error: unknown) => string)): Promise<void> {
+async function act(key: string, action: () => Promise<unknown>, failure: string | ((error: unknown) => string)): Promise<boolean> {
   if (read(busy)[key]) {
-    return
+    return false
   }
+  let succeeded = false
   update(busy, (b) => ({ ...b, [key]: true }))
   set(actionError, null)
   try {
     await action()
+    succeeded = true
   } catch (error) {
     set(actionError, typeof failure === 'string' ? failure : failure(error))
   } finally {
     update(busy, ({ [key]: _, ...rest }) => rest)
   }
   await load()
+  return succeeded
 }
 
-// After a start, look again each second until the action runs, so Stop shows without waiting a full
-// cycle: the look right after the start usually comes before the terminal's shell starts the command.
-const BOOT_CHECK_MS = 1000
-const BOOT_CHECKS = 10
-
-const isUp = (id: string) => Boolean(read(overview)?.servers.find((s) => s.id === id)?.up)
-
-// Actions pressed to run that do not show as running yet: their row shows a disabled Stop meanwhile,
-// so the press has an answer at once.
-const starting = atom<Record<string, true>>({})
-const doneStarting = (id: string) => update(starting, ({ [id]: _, ...rest }) => rest)
-
-function watchStart(id: string, left = BOOT_CHECKS): void {
-  if (left > 0 && !isUp(id)) {
-    setTimeout(() => void load().then(() => watchStart(id, left - 1)), BOOT_CHECK_MS)
-  } else {
-    doneStarting(id)
-  }
-}
+let actionPolling: ReturnType<typeof watchQuickActions>
 
 async function startServer(server: Server): Promise<void> {
-  update(starting, (all) => ({ ...all, [server.id]: true as const }))
-  await act(`server:${server.id}`, () => plugin.request('server.start', { id: server.id }, { timeoutMs: 40000 }), `Could not start ${server.name}.`)
-  if (read(actionError)) {
-    doneStarting(server.id)
-  } else {
-    watchStart(server.id)
-  }
+  await actionPolling.start(server.id, () =>
+    act(`server:${server.id}`, () => plugin.request('server.start', { id: server.id }, { timeoutMs: 40000 }), `Could not start ${server.name}.`)
+  )
 }
 // Both open in the default browser; Orca allows it only from the press itself.
 const openServer = (server: Server) => void shell.openExternal(server.url as string)
@@ -332,6 +312,8 @@ function refresh(): void {
 }
 
 export function setup(ctx: PanelContext): () => void {
+  const polling = watchQuickActions(ctx, load, () => read(overview)?.servers ?? [])
+  actionPolling = polling
   ctx.subscriptions.push(
     on('agent.status.changed', loadSoon),
     on('workspace.created', loadSoon),
@@ -347,13 +329,6 @@ export function setup(ctx: PanelContext): () => void {
       void loadSelected()
     }
   }, SELECTED_MS)
-  // An action with no address runs only while its command does, such as a build or a deploy: look
-  // more often while one runs, so Run comes back soon after it ends.
-  const commandTimer = setInterval(() => {
-    if (read(ctx.visible) && read(overview)?.servers.some((s) => s.up && !s.url && s.terminal)) {
-      void load()
-    }
-  }, COMMAND_MS)
   ctx.subscriptions.push(
     storage.onDidChange(({ key }) => {
       if (key === EXPANDED_KEY) {
@@ -370,7 +345,7 @@ export function setup(ctx: PanelContext): () => void {
   return () => {
     clearInterval(timer)
     clearInterval(selectedTimer)
-    clearInterval(commandTimer)
+    polling.dispose()
     // A press's hold is this panel run's; the next run reads Orca afresh.
     selectedHeldUntil = 0
     ++loadSeq
@@ -387,7 +362,7 @@ function ServerCard({ server }: { server: Server }) {
   const editingThis = read(editing) === server.id
   // Run and Stop share the first slot; a server with no Orca terminal to close, such as one under pm2 or an agent, has nothing to stop.
   // Between Run and the server showing as running, Stop shows disabled.
-  const control = !server.up && read(starting)[server.id] ? (
+  const control = !server.up && read(startingActions)[server.id] ? (
     <IconButton icon="stop" label={`Stop ${server.name}`} tooltip="Starting" size="xs" variant="ghost" disabled onPress={() => undefined} />
   ) : !server.up ? (
     <IconButton
