@@ -1,7 +1,7 @@
 import { assert, test } from 'orca/testing'
 import { agentPanes, orderLikeSidebar, parseProjects, parseSessions, terminalAlive, terminalByTitle, terminalOfPane, terminalOfProcess, terminalServing, workspaceRanks } from './overview'
 import type { Project, QuickAction } from './protocol'
-import { linkProjects, listenerPids, portOf, printedUrl, processTerminal, saveAction, storedActions, terminalTail, terminalTitle } from './servers'
+import { linkProjects, listenerPids, listenersInFolder, outputCursor, portOf, printedUrl, processFolders, processTerminal, relearnedUrl, saveAction, storedActions, terminalTail, terminalTitle } from './servers'
 import { handleOf } from './worker'
 import { compactProblem, operationId, payloadFingerprint, runFailure, runtimeClientPath } from './chats'
 
@@ -165,6 +165,18 @@ test('finds the address a dev server printed, preferring its Local line', () => 
   // Without a Local line, the last address printed.
   assert.equal(printedUrl(['db on http://127.0.0.1:54322', 'ready on http://0.0.0.0:3100.']), 'http://localhost:3100')
   assert.equal(printedUrl(['compiling...']), null)
+  // A rerun in the same terminal: its Local line comes last.
+  assert.equal(printedUrl(['  ➜  Local:   http://localhost:3410/', 'stopped', '  ➜  Local:   http://localhost:3411/']), 'http://localhost:3411')
+  assert.equal(outputCursor('{"result":{"terminal":{"nextCursor":"260","latestCursor":"267"}}}'), '267')
+  assert.equal(outputCursor('{"result":{"terminal":{"nextCursor":42}}}'), '42', 'a host without latestCursor')
+  assert.equal(outputCursor('{"result":{"terminal":{"nextCursor":null}}}'), null)
+  assert.equal(outputCursor('not json'), null)
+  assert.equal(outputCursor('{"result":{"terminal":{"nextCursor":"263","latestCursor":"267"}}}', 'next'), '263', 'where a page read on from a cursor ends')
+  // A start's printed address replaces the stored one only when the port moved.
+  assert.equal(relearnedUrl('http://demo.localhost:3100', 'http://localhost:3100'), 'http://demo.localhost:3100')
+  assert.equal(relearnedUrl('http://127.0.0.1:3410/concepts', 'http://localhost:3410'), 'http://127.0.0.1:3410/concepts')
+  assert.equal(relearnedUrl('http://localhost:3410', 'http://localhost:3411'), 'http://localhost:3411', 'the port was taken, so it moved')
+  assert.equal(relearnedUrl(null, 'http://localhost:5173'), 'http://localhost:5173')
   assert.equal(portOf('http://demo.localhost:3100'), 3100)
   assert.equal(portOf('https://example.com:3100'), null, 'a remote address is never probed on localhost')
   assert.equal(portOf(null), null)
@@ -189,7 +201,7 @@ test('links stored actions to the project of their folder', () => {
 test('saves a new or changed action, forgetting what no longer holds', () => {
   const linked = linkProjects([WEB], PROJECT_LIST)
   const added = saveAction(linked, { name: ' Docs ', command: 'bun run docs', projectId: 'p-api' }, PROJECT_LIST, 'docs-1')
-  assert.deepEqual(added[1], { id: 'docs-1', name: 'Docs', command: 'bun run docs', projectId: 'p-api', path: '/c/api', url: null })
+  assert.deepEqual(added[1], { id: 'docs-1', name: 'Docs', command: 'bun run docs', projectId: 'p-api', path: '/c/api', url: null, urlTyped: false })
   // A new name keeps the address.
   const renamed = saveAction(linked, { id: 'web', name: 'Site', command: 'bun run dev', projectId: 'p-web' }, PROJECT_LIST, 'x')[0]
   assert.deepEqual([renamed.name, renamed.url], ['Site', 'http://localhost:3000'])
@@ -199,7 +211,14 @@ test('saves a new or changed action, forgetting what no longer holds', () => {
   assert.deepEqual([moved.path, moved.url], ['/c/api', null])
   // A typed address wins, even over a new command; an empty one means read it at the next Run.
   const typed = saveAction(linked, { id: 'web', name: 'Web', command: 'bun run start', projectId: 'p-web', url: 'localhost:4000/' }, PROJECT_LIST, 'x')[0]
-  assert.equal(typed.url, 'http://localhost:4000')
+  assert.deepEqual([typed.url, typed.urlTyped], ['http://localhost:4000', true])
+  // The form sends back the address it showed: a printed one stays printed, so the next Run learns it again.
+  const shown = saveAction(linked, { id: 'web', name: 'Site', command: 'bun run dev', projectId: 'p-web', url: 'http://localhost:3000' }, PROJECT_LIST, 'x')[0]
+  assert.deepEqual([shown.url, shown.urlTyped], ['http://localhost:3000', false])
+  const rerun = saveAction(linked, { id: 'web', name: 'Web', command: 'bun run start', projectId: 'p-web', url: 'http://localhost:3000' }, PROJECT_LIST, 'x')[0]
+  assert.equal(rerun.url, null, 'a printed address shown back still goes with a new command')
+  const kept = saveAction([typed], { id: 'web', name: 'Web', command: 'bun run dev', projectId: 'p-web', url: 'http://localhost:4000' }, PROJECT_LIST, 'x')[0]
+  assert.deepEqual([kept.url, kept.urlTyped], ['http://localhost:4000', true], 'a typed one stays typed, even with a new command')
   assert.equal(saveAction(linked, { id: 'web', name: 'Web', command: 'bun run dev', projectId: 'p-web', url: ' ' }, PROJECT_LIST, 'x')[0].url, null)
   assert.equal(saveAction(linked, { name: 'New', command: 'x', projectId: 'p-web', url: 'https://app.localhost:3100/a/' }, PROJECT_LIST, 'n')[1].url, 'https://app.localhost:3100/a')
   assert.throws(() => saveAction(linked, { name: 'Web', command: 'x', projectId: 'p-web', url: 'ftp://x' }, PROJECT_LIST, 'x'))
@@ -210,6 +229,13 @@ test('saves a new or changed action, forgetting what no longer holds', () => {
 test('reads a server process and the terminal it was started in', () => {
   assert.deepEqual(listenerPids('12320\n12320\n\n1\n'), [12320], 'once each, never launchd')
   assert.deepEqual(listenerPids(''), [])
+  // Whose port it is: a listener of another service on the same port is never the action's.
+  const folders = processFolders('p101\nfcwd\nn/c/kb\np102\nfcwd\nn/c/kb/apps/web\np103\nfcwd\nn/c/kb-other\n')
+  assert.deepEqual([...folders], [[101, '/c/kb'], [102, '/c/kb/apps/web'], [103, '/c/kb-other']])
+  assert.equal(listenersInFolder([101, 102], folders, '/c/kb'), true, 'the folder and one below it')
+  assert.equal(listenersInFolder([101, 103], folders, '/c/kb'), false, 'a sibling folder with the same prefix')
+  assert.equal(listenersInFolder([104], folders, '/c/kb'), false, 'a folder lsof could not read')
+  assert.equal(listenersInFolder([], folders, '/c/kb'), false, 'nothing listens')
   const shell = '27643 ttys004 bun run kb:ui --dev TERM=xterm ORCA_TAB_ID=tab1 ORCA_TERMINAL_HANDLE=term_old ORCA_PANE_KEY=tab1:leaf1 HOME=/u'
   assert.deepEqual(processTerminal(`  ${shell}\n`), { ppid: 27643, detached: false, paneKey: 'tab1:leaf1', handle: 'term_old' })
   assert.deepEqual(processTerminal('12318 ttys004 node scripts/serve.mjs --dev'), { ppid: 12318, detached: false, paneKey: null, handle: null }, 'a clean environment')

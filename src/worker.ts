@@ -2,12 +2,31 @@
 // have no host method for projects, all workspaces or terminal creation, so the worker asks the
 // `orca` CLI, which runs as the same user.
 import { randomUUID } from 'node:crypto'
+import { realpath } from 'node:fs/promises'
 import { createConnection } from 'node:net'
 import type { OrcaWorkerApi } from 'orca/worker'
 import { run } from './cli'
-import { agentPanes, chatSessionId, orderLikeSidebar, parseProjects, parseSessions, terminalAlive, terminalByTitle, terminalOfPane, terminalServing, workspaceRanks } from './overview'
+import { agentPanes, chatSessionId, orderLikeSidebar, paneOfTerminal, parseProjects, parseSessions, terminalOfPane, terminalServing, workspaceRanks } from './overview'
 import type { Overview, Project, QuickAction, Server } from './protocol'
-import { linkProjects, listenerPids, portOf, printedUrl, processTerminal, saveAction, storedActions, terminalTail, terminalTitle } from './servers'
+import {
+  actionTerminals,
+  commandRunning,
+  linkProjects,
+  listenerPids,
+  listenersInFolder,
+  outputCursor,
+  printedUrl,
+  processFolders,
+  processTerminal,
+  relearnedUrl,
+  saveAction,
+  serverState,
+  startStep,
+  storedActions,
+  terminalTail,
+  terminalTitle
+} from './servers'
+import type { ServerProbe, ServerState } from './servers'
 import { pullRequestInfo } from './pulls'
 import { sessionUsage, tabPositions } from './usage'
 import { compactChat } from './chats'
@@ -18,6 +37,9 @@ const ACTIONS_KEY = 'quickActions'
 // Server id -> the terminal handle it was started in, kept across worker restarts.
 const HANDLES_KEY = 'serverTerminals'
 type Handles = Record<string, string>
+// Server id -> where the output of its latest start begins (null: read the tail), until it prints its address.
+const STARTS_KEY = 'serverStarts'
+type Starts = Record<string, string | null>
 
 const PORT_TIMEOUT_MS = 400
 // How much of a server's terminal output is searched for the address it printed.
@@ -51,9 +73,23 @@ export function handleOf(json: string): string | null {
 const newId = (name: string) => `${name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'action'}-${randomUUID().slice(0, 8)}`
 
 export default function activate(orca: OrcaWorkerApi): void {
-  async function handles(): Promise<Handles> {
-    const stored = await orca.storage.get(HANDLES_KEY)
-    return stored && typeof stored === 'object' && !Array.isArray(stored) ? (stored as Handles) : {}
+  async function record<T>(key: string): Promise<Record<string, T>> {
+    const stored = await orca.storage.get(key)
+    return stored && typeof stored === 'object' && !Array.isArray(stored) ? (stored as Record<string, T>) : {}
+  }
+  const handles = (): Promise<Handles> => record<string>(HANDLES_KEY)
+  const starts = (): Promise<Starts> => record<string | null>(STARTS_KEY)
+
+  /** Marks a start, so the address its output prints replaces the stored one. */
+  async function markStart(id: string, cursor: string | null): Promise<void> {
+    await orca.storage.set(STARTS_KEY, { ...(await starts()), [id]: cursor })
+  }
+
+  async function forgetStarts(ids: readonly string[]): Promise<void> {
+    const current = await starts()
+    if (ids.some((id) => id in current)) {
+      await orca.storage.set(STARTS_KEY, Object.fromEntries(Object.entries(current).filter(([id]) => !ids.includes(id))))
+    }
   }
 
   // Changes to the stored list run one at a time, so a save and a learned address never overwrite each other.
@@ -89,17 +125,6 @@ export default function activate(orca: OrcaWorkerApi): void {
     return parseProjects(projectsJson, reposJson, [])
   }
 
-  /** Each action's live terminal: the one it was started in, else one with its title. */
-  function liveTerminals(list: readonly QuickAction[], terminalsJson: string, known: Handles): Record<string, string | null> {
-    return Object.fromEntries(
-      list.map((a) => {
-        const handle = known[a.id]
-        const live = handle && terminalAlive(terminalsJson, handle, a.path) ? handle : terminalByTitle(terminalsJson, terminalTitle(a), a.path)
-        return [a.id, live]
-      })
-    )
-  }
-
   /** A missing lsof or ps is logged, since it would otherwise look like a server with no terminal. */
   function logMissing(error: unknown): void {
     if ((error as { notFound?: boolean }).notFound) {
@@ -107,16 +132,31 @@ export default function activate(orca: OrcaWorkerApi): void {
     }
   }
 
-  /** The Orca terminal serving `port` when the panel did not start it, as `terminalServing` in overview.ts finds it. */
-  async function servingTerminal(port: number, terminalsJson: string, agents: ReadonlySet<string>): Promise<string | null> {
-    let pids: number[]
+  /** The processes listening on `port`. */
+  async function listeners(port: number): Promise<number[] | null> {
     try {
-      pids = listenerPids(await run('lsof', ['-nP', '-t', `-iTCP:${port}`, '-sTCP:LISTEN']))
+      return listenerPids(await run('lsof', ['-nP', '-t', `-iTCP:${port}`, '-sTCP:LISTEN']))
     } catch (error) {
-      // lsof also fails when nothing listens.
+      // lsof also fails when nothing listens; a missing lsof cannot tell.
       logMissing(error)
-      return null
+      return (error as { notFound?: boolean }).notFound ? null : []
     }
+  }
+
+  /** Whether every listener runs in the folder; one whose folder cannot be read does not. */
+  async function inFolder(pids: readonly number[], folder: string): Promise<boolean> {
+    try {
+      // lsof reports resolved folders, such as /private/tmp for /tmp.
+      const path = await realpath(folder).catch(() => folder)
+      return listenersInFolder(pids, processFolders(await run('lsof', ['-a', '-d', 'cwd', '-Fpn', '-p', pids.join(',')])), path)
+    } catch (error) {
+      logMissing(error)
+      return false
+    }
+  }
+
+  /** The Orca terminal the listeners on a port were started in, as `terminalServing` in overview.ts finds it. */
+  async function servingTerminal(pids: readonly number[], terminalsJson: string, agents: ReadonlySet<string>): Promise<string | null> {
     const processOf = async (pid: number) => {
       try {
         return processTerminal(await run('ps', ['eww', '-o', 'ppid=,tty=,command=', '-p', String(pid)]))
@@ -129,30 +169,70 @@ export default function activate(orca: OrcaWorkerApi): void {
     return terminalServing(pids, processOf, terminalsJson, agents)
   }
 
-  /** The address each server without one printed in its terminal, saved for next time. */
+  /** The real probe of a server's port, for `serverState` in servers.ts. */
+  function probe(terminalsJson: string, agents: () => Promise<ReadonlySet<string>>): ServerProbe {
+    // One process list per probe, read only when a terminal is asked about.
+    let processes: Promise<string> | null = null
+    const processList = () =>
+      (processes ??= run('ps', ['eww', '-ax', '-o', 'pid=,tty=,stat=,command=']).catch((error) => {
+        logMissing(error)
+        return ''
+      }))
+    return {
+      portOpen,
+      listeners,
+      terminalOf: async (pids) => servingTerminal(pids, terminalsJson, await agents()),
+      inFolder,
+      commandRunning: async (terminal) => commandRunning(await processList(), paneOfTerminal(terminalsJson, terminal), terminal)
+    }
+  }
+
+  /**
+   * The address each server printed in its terminal since its latest start, or ever when none is
+   * known, saved for next time. A typed address stays.
+   */
   async function learnUrls(list: QuickAction[], terminals: Record<string, string | null>): Promise<QuickAction[]> {
+    const started = await starts()
+    const relearn = (a: QuickAction) => !(a.urlTyped && a.url) && (!a.url || a.id in started)
     const learned = new Map<string, string>()
+    // Server id -> the cursor read from and where that page ended, when it held no address.
+    const paged = new Map<string, [string, string]>()
     await Promise.all(
       list.map(async (a) => {
         const terminal = terminals[a.id]
-        if (a.url || !terminal) {
+        if (!terminal || !relearn(a)) {
           return
         }
+        const cursor = started[a.id]
         try {
-          const url = printedUrl(terminalTail(await run('orca', ['terminal', 'read', '--terminal', terminal, '--limit', OUTPUT_LINES, '--json'])))
+          const read = ['terminal', 'read', '--terminal', terminal, '--limit', OUTPUT_LINES, ...(cursor ? ['--cursor', cursor] : []), '--json']
+          const json = await run('orca', read)
+          const url = printedUrl(terminalTail(json))
+          const next = cursor ? outputCursor(json, 'next') : null
           if (url) {
             learned.set(a.id, url)
+          } else if (cursor && next && next !== cursor) {
+            paged.set(a.id, [cursor, next])
           }
         } catch {
           // Unread now; the next refresh tries again.
         }
       })
     )
+    if (paged.size) {
+      // The next refresh reads on from there, unless a start marked the server again meanwhile.
+      const current = await starts()
+      const moved = [...paged].filter(([id, [from]]) => current[id] === from)
+      if (moved.length) {
+        await orca.storage.set(STARTS_KEY, { ...current, ...Object.fromEntries(moved.map(([id, [, to]]) => [id, to])) })
+      }
+    }
     if (!learned.size) {
       return list
     }
-    // Only an address still unknown is filled in, in case the person saved meanwhile.
-    return change((current) => current.map((a) => (!a.url && learned.has(a.id) ? { ...a, url: learned.get(a.id) ?? null } : a)))
+    await forgetStarts([...learned.keys()])
+    // Checked again, in case the person saved meanwhile.
+    return change((current) => current.map((a) => (learned.has(a.id) && relearn(a) ? { ...a, url: relearnedUrl(a.url, learned.get(a.id) as string) } : a)))
   }
 
   async function load(): Promise<Overview> {
@@ -168,71 +248,63 @@ export default function activate(orca: OrcaWorkerApi): void {
     const sessions = orderLikeSidebar(parsed, workspaceRanks(psJson), await tabPositions(parsed.map((s) => s.key.split(':')[0])))
     const projectList = parseProjects(projectsJson, reposJson, sessions, psJson)
     let list = await change((current) => linkProjects(current, projectList))
-    const terminals = liveTerminals(list, terminalsJson, known)
+    const terminals = actionTerminals(list, terminalsJson, known)
     list = await learnUrls(list, terminals)
-    const up = await Promise.all(
-      list.map((a) => {
-        const port = portOf(a.url)
-        // Before its address is known, a server counts as running while its terminal is open.
-        return port ? portOpen(port) : Promise.resolve(Boolean(terminals[a.id]))
-      })
-    )
-    // A server started outside the panel gets the terminal it runs in, so it can be shown and stopped too.
     const agents = agentPanes(psJson)
-    const serving = await Promise.all(
-      list.map((a, index) => {
-        const port = portOf(a.url)
-        return port && up[index] && !terminals[a.id] ? servingTerminal(port, terminalsJson, agents) : Promise.resolve(null)
-      })
-    )
+    const ports = probe(terminalsJson, async () => agents)
+    const states = await Promise.all(list.map((a) => serverState(a, terminals, ports)))
     const servers: Server[] = list.map((a, index) => ({
       id: a.id,
       name: a.name,
       command: a.command,
       projectId: a.projectId,
       url: a.url,
-      up: up[index],
-      terminal: terminals[a.id] ?? serving[index] ?? null
+      ...states[index]
     }))
     return { servers, projects: projectList, sessions }
   }
 
-  /** The terminal the panel started the server in, else the one serving its port, which is then known to be serving. */
-  async function liveTerminal(a: QuickAction): Promise<{ terminal: string | null; serving: boolean }> {
-    const terminalsJson = await run('orca', ['terminal', 'list', '--json'])
-    const tracked = liveTerminals([a], terminalsJson, await handles())[a.id]
-    if (tracked) {
-      return { terminal: tracked, serving: false }
+  /** The server's state now, with the terminal the panel started it in, asking lsof even when the port check fails. */
+  async function stateNow(a: QuickAction): Promise<ServerState & { own: string | null; commandRunning: boolean }> {
+    const [list, terminalsJson, known] = await Promise.all([actions(), run('orca', ['terminal', 'list', '--json']), handles()])
+    const own = actionTerminals(list, terminalsJson, known)
+    const mine = own[a.id] ?? null
+    const agents = async () => agentPanes(await run('orca', ['worktree', 'ps', '--json']))
+    const ports = probe(terminalsJson, agents)
+    const [state, running] = await Promise.all([serverState(a, own, ports, true), mine ? ports.commandRunning(mine) : Promise.resolve(false)])
+    return { ...state, own: mine, commandRunning: running }
+  }
+
+  /** Where the terminal's output ends now, so the address the rerun prints is read from there. */
+  async function outputEnd(terminal: string): Promise<string | null> {
+    try {
+      return outputCursor(await run('orca', ['terminal', 'read', '--terminal', terminal, '--limit', '1', '--json']))
+    } catch {
+      return null
     }
-    const port = portOf(a.url)
-    const serving = port ? await servingTerminal(port, terminalsJson, agentPanes(await run('orca', ['worktree', 'ps', '--json']))) : null
-    return { terminal: serving, serving: Boolean(serving) }
   }
 
   // One start per server at a time, so a double press opens one terminal.
   const starting = new Map<string, Promise<null>>()
 
   async function start(a: QuickAction): Promise<null> {
-    const port = portOf(a.url)
-    const [found, portUp] = await Promise.all([liveTerminal(a), port ? portOpen(port) : Promise.resolve(false)])
-    const live = found.terminal
-    // A terminal found by its port is serving, even when the port check timed out: never type the command into it.
-    const up = portUp || found.serving
-    if (live && (up || !port)) {
-      // Already serving, or its address is not known yet so it may be: show its terminal.
-      await run('orca', ['terminal', 'switch', '--terminal', live, '--json'])
+    const { own, commandRunning: running, ...state } = await stateNow(a)
+    const step = startStep(state, own, running)
+    if (step === 'show') {
+      if (state.terminal) {
+        await run('orca', ['terminal', 'switch', '--terminal', state.terminal, '--json'])
+      }
       return null
     }
-    if (up) {
-      // Serving from elsewhere (such as pm2): a second one would fail.
-      return null
-    }
-    if (live) {
+    if (step === 'rerun' && own) {
       // Its terminal is open but the server stopped: run the command there again.
-      await run('orca', ['terminal', 'send', '--terminal', live, '--text', a.command, '--enter', '--json'])
-      await run('orca', ['terminal', 'switch', '--terminal', live, '--json'])
+      await markStart(a.id, await outputEnd(own))
+      await run('orca', ['terminal', 'send', '--terminal', own, '--text', a.command, '--enter', '--json'])
+      await run('orca', ['terminal', 'switch', '--terminal', own, '--json'])
       return null
     }
+    // A new terminal's whole output is this start's.
+    await markStart(a.id, null)
     const out = await run(
       'orca',
       ['terminal', 'create', '--worktree', `path:${a.path}`, '--title', terminalTitle(a), '--command', a.command, '--focus', '--json'],
@@ -250,6 +322,7 @@ export default function activate(orca: OrcaWorkerApi): void {
   async function forgetTerminal(id: string): Promise<void> {
     const { [id]: _, ...rest } = await handles()
     await orca.storage.set(HANDLES_KEY, rest)
+    await forgetStarts([id])
   }
 
   orca.panels.handle('overview.load', load)
@@ -267,7 +340,8 @@ export default function activate(orca: OrcaWorkerApi): void {
     return pending
   })
   orca.panels.handle('server.stop', async ({ id }) => {
-    const live = (await liveTerminal(await action(id))).terminal
+    // The terminal it is watched in: never a terminal of another service on its port.
+    const live = (await stateNow(await action(id))).terminal
     if (live) {
       await run('orca', ['terminal', 'close', '--terminal', live, '--json'])
     }
