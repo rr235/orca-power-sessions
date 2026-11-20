@@ -6,7 +6,7 @@ import { realpath } from 'node:fs/promises'
 import { createConnection } from 'node:net'
 import type { OrcaWorkerApi } from 'orca/worker'
 import { run } from './cli'
-import { agentPanes, chatSessionId, orderLikeSidebar, paneOfTerminal, parseProjects, parseSessions, terminalOfPane, terminalServing, workspaceRanks } from './overview'
+import { agentPanes, chatSessionId, defaultAgent, orderLikeSidebar, paneOfTerminal, parseProjects, parseSessions, terminalOfPane, terminalServing, workspaceRanks } from './overview'
 import type { Overview, Project, QuickAction, Server } from './protocol'
 import {
   actionTerminals,
@@ -31,7 +31,7 @@ import type { ServerObservation, ServerState } from './servers'
 import { pullRequestInfo } from './pulls'
 import { sessionUsage, tabPositions } from './usage'
 import { compactChat } from './chats'
-import { focusTab, folderAt, selectedTab } from './tabs'
+import { focusTab, folderAt, selectedTab, tabCount } from './tabs'
 
 // The quick actions, as the person last saved them.
 const ACTIONS_KEY = 'quickActions'
@@ -417,18 +417,23 @@ export default function activate(orca: OrcaWorkerApi): void {
     return null
   })
   orca.panels.handle('session.selected', () => selectedTab())
-  /**
-   * Shows the workspace at `path` in Orca's window and answers the selector Orca's runtime knows
-   * it by. The CLI refuses to show a folder workspace, so a folder goes through `workspace.open`.
-   */
-  async function showWorkspace(path: string): Promise<string> {
-    const folder = folderAt((await orca.host.call('workspace.list')).workspaces, path)
+  /** The id of the folder workspace at `path`, which is also its runtime selector, or null for a Git worktree. */
+  const folderOf = async (path: string) => folderAt((await orca.host.call('workspace.list')).workspaces, path)
+
+  /** Shows a workspace in Orca's window. The CLI refuses to show a folder workspace, so a folder goes through `workspace.open`. */
+  async function show(path: string, folder: string | null): Promise<void> {
     if (folder) {
       await orca.host.call('workspace.open', { workspaceId: folder })
-      return folder
+    } else {
+      await run('orca', ['worktree', 'activate', '--worktree', `path:${path}`, '--json'])
     }
-    await run('orca', ['worktree', 'activate', '--worktree', `path:${path}`, '--json'])
-    return `path:${path}`
+  }
+
+  /** Shows the workspace at `path` and answers the selector Orca's runtime knows it by. */
+  async function showWorkspace(path: string): Promise<string> {
+    const folder = await folderOf(path)
+    await show(path, folder)
+    return folder ?? `path:${path}`
   }
 
   orca.panels.handle('session.focus', async ({ key, path }) => {
@@ -442,8 +447,40 @@ export default function activate(orca: OrcaWorkerApi): void {
     }
     return null
   })
-  orca.panels.handle('project.open', async ({ path }) => {
-    await showWorkspace(path)
+  /**
+   * Shows the workspace. One with no tabs starts the agent a new tab would, as a chat or terminal
+   * per Orca's settings, in place of the plain terminal Orca opens in an empty workspace.
+   */
+  async function openWorkspace(path: string): Promise<null> {
+    const folder = await folderOf(path)
+    const workspace = folder ?? `path:${path}`
+    if ((await tabCount(workspace)) === 0) {
+      const agent = defaultAgent(await run('orca', ['agent', 'installed', '--json']).catch(() => '{}'))
+      if (agent) {
+        try {
+          // The CLI cannot show a folder, so a folder's agent starts in the background and is shown below.
+          await run('orca', ['agent', 'launch', '--agent', agent, '--worktree', workspace, ...(folder ? [] : ['--focus']), '--json'], 30000)
+          if (!folder) {
+            return null
+          }
+        } catch (error) {
+          // Not repeated, as the launch may have opened its tab: the workspace is shown as before.
+          orca.log(`launch ${agent} in ${path}: ${(error as Error).message}`)
+        }
+      }
+    }
+    await show(path, folder)
     return null
+  }
+
+  // One open per workspace at a time, so a double press starts one agent.
+  const opening = new Map<string, Promise<null>>()
+  orca.panels.handle('project.open', ({ path }) => {
+    const pending = opening.get(path) ?? openWorkspace(path).finally(() => opening.delete(path))
+    opening.set(path, pending)
+    return pending.catch((error: Error) => {
+      orca.log(`open ${path}: ${error.message}`)
+      throw error
+    })
   })
 }

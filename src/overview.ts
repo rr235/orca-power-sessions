@@ -319,6 +319,16 @@ export function paneOfTerminal(terminalsJson: string, handle: string): string | 
   return found?.tabId && found.leafId ? `${found.tabId}:${found.leafId}` : null
 }
 
+/** The agent a new tab starts in Orca's settings, from `orca agent installed --json`, or null when none is set. */
+export function defaultAgent(installedJson: string): string | null {
+  try {
+    const agents = result<{ agents?: { id?: string; default?: boolean }[] }>(installedJson).agents ?? []
+    return agents.find((a) => a.default === true && a.id)?.id ?? null
+  } catch {
+    return null
+  }
+}
+
 /** Whether a terminal handle is still live in this checkout in `orca terminal list --json`. */
 export function terminalAlive(terminalsJson: string, handle: string, path: string): boolean {
   const terminals = result<{ terminals?: TerminalRow[] }>(terminalsJson).terminals ?? []

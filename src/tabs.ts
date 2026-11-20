@@ -1,6 +1,6 @@
-// Brings an agent session's tab to the front of Orca's window, and reads which tab it shows. The
-// live `worktree.ps` identifies the focused workspace. Orca has no CLI command or plugin method
-// for a tab, so the worker calls `session.tabs.activate` and `session.tabs.list` through Orca's
+// Brings an agent session's tab to the front of Orca's window, reads which tab it shows and counts a
+// workspace's tabs. The live `worktree.ps` identifies the focused workspace. Orca has no CLI
+// command or plugin method for a tab, so the worker calls `session.tabs.activate` and `session.tabs.list` through Orca's
 // runtime client (see chats.ts). These are Orca internals and can change between releases.
 import { runInOrca } from './chats'
 import { tabOfPane } from './overview'
@@ -109,6 +109,41 @@ export function selectedOf(output: string): Selected | null {
   try {
     const parsed = JSON.parse(output.trim().split('\n').pop() ?? '') as { worktree?: string; activeTabId?: string | null }
     return parsed?.worktree ? { worktreeId: parsed.worktree, tabId: parsed.activeTabId ? shownTab(parsed.activeTabId) : null } : null
+  } catch {
+    return null
+  }
+}
+
+const COUNT_SCRIPT = `
+const [request] = process.argv.slice(1)
+const { client: clientPath, worktree } = JSON.parse(request)
+const { RuntimeClient } = require(clientPath)
+;(async () => {
+  try {
+    const answer = await new RuntimeClient().call('${LIST_METHOD}', { worktree }, { timeoutMs: ${LIST_TIMEOUT_MS} })
+    const tabs = answer.result && answer.result.tabs
+    console.log(JSON.stringify({ count: Array.isArray(tabs) ? tabs.length : null }))
+  } catch (error) {
+    console.log(JSON.stringify({ error: { code: error.code || null, message: String(error.message || error) } }))
+  }
+  process.exit(0)
+})()
+`
+
+/** How many tabs `session.tabs.list` answered with, or null when it did not answer. */
+export function tabCountOf(output: string): number | null {
+  try {
+    const count = (JSON.parse(output.trim().split('\n').pop() ?? '') as { count?: unknown })?.count
+    return typeof count === 'number' ? count : null
+  } catch {
+    return null
+  }
+}
+
+/** How many tabs the workspace `workspace` selects (`path:<path>` or `folder:<id>`) has open, or null when Orca cannot say. */
+export async function tabCount(workspace: string): Promise<number | null> {
+  try {
+    return tabCountOf(await runInOrca(COUNT_SCRIPT, { worktree: workspace }, LIST_TIMEOUT_MS + 1000))
   } catch {
     return null
   }
