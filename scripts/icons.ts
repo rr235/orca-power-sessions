@@ -17,8 +17,6 @@ const ICONS: Record<string, { icon: string; tone: Tone }> = {
   'status-failed': { icon: 'circle-x', tone: 'danger' },
   'status-stopped': { icon: 'circle-slash', tone: 'muted' },
   'open-external': { icon: 'external-link', tone: 'muted' },
-  pin: { icon: 'pin', tone: 'muted' },
-  unpin: { icon: 'pin-off', tone: 'muted' },
   'chevron-right': { icon: 'chevron-right', tone: 'muted' },
   'chevron-down': { icon: 'chevron-down', tone: 'muted' }
 }

@@ -28,7 +28,7 @@ import {
 import { tabOfPane } from './overview'
 import type { Overview, Project, QuickActionInput, PullRequestInfo, Selected, Server, Session, SessionUsage } from './protocol'
 import { normalUrl } from './url'
-import { Icon, PinButton, SessionDetails } from './session-details'
+import { Icon, SessionDetails } from './session-details'
 
 const REFRESH_MS = 15000
 const EVENT_DELAY_MS = 400
@@ -440,7 +440,7 @@ function SessionRow({ session, inPinnedArea = false }: { session: Session; inPin
               titleLoading={read(prLoading)}
               compacting={Boolean(read(busy)[`compact:${session.key}`])}
               onCompact={() => void compactSession(session)}
-              onPin={onPinOf(session)}
+              favourite={favouriteOf(session)}
             />
           </Box>
         </Box>
@@ -526,9 +526,13 @@ const pinnable = (session: Session) => !session.key.startsWith(`${session.worktr
 /** Takes a session out of the Pinned area; it stays where it is in its project. */
 const unpinSession = (key: string) => update(pinned, (keys) => keys.filter((k) => k !== key))
 
-/** The details card's pin, for a session that can pin and is not pinned yet. */
-const onPinOf = (session: Session) =>
-  pinnable(session) && !read(pinned).includes(session.key) ? () => pinSession(session.key) : null
+/** The details card's Favourites star: red to remove a favourite; none when the session cannot be one. */
+function favouriteOf(session: Session): { on: boolean; onPress: () => void } | null {
+  if (read(pinned).includes(session.key)) {
+    return { on: true, onPress: () => unpinSession(session.key) }
+  }
+  return pinnable(session) ? { on: false, onPress: () => pinSession(session.key) } : null
+}
 
 // How far an open details card sits in from its session's row, in pixels.
 const DETAILS_INDENT_PX = 16
@@ -536,9 +540,9 @@ const DETAILS_INDENT_PX = 16
 function SessionLine({ session, inPinnedArea = false }: { session: Session; inPinnedArea?: boolean }) {
   return (
     // A list row shows the session's tab (terminal or chat) in Orca. At the right, the chevron that
-    // toggles the details. In the Pinned area the details always show, so the row has no chevron;
-    // the unpin button takes its place. Buttons stay beside the ListItem so controls are
-    // not nested.
+    // toggles the details. In the Favourites area the details always show, so the row has no
+    // chevron; an empty slot keeps the titles' ends aligned. The chevron stays beside the ListItem
+    // so controls are not nested.
     // Every row is one line that truncates. Only the title of the tab Orca shows is in normal text,
     // with no background.
     <Box direction="row" align="center" gap="none" minWidth={0}>
@@ -565,12 +569,15 @@ function SessionLine({ session, inPinnedArea = false }: { session: Session; inPi
           </ListItem>
         </List>
       </Box>
-      {inPinnedArea ? <PinButton kind="unpin" session={session} onPress={() => unpinSession(session.key)} /> : <DetailsButton session={session} />}
+      {inPinnedArea ? <Box width={CHEVRON_SLOT_PX} minWidth={CHEVRON_SLOT_PX} shrink={false} /> : <DetailsButton session={session} />}
     </Box>
   )
 }
 
-// The chevron that shows or hides a session's details: a PNG like the pin's, in a pressable row,
+// The chevron's width with its row's side padding, which a Favourites row keeps empty.
+const CHEVRON_SLOT_PX = 28
+
+// The chevron that shows or hides a session's details: a muted PNG in a pressable row,
 // since Orca's IconButton has no size under 24px.
 function DetailsButton({ session }: { session: Session }) {
   const isOpen = Boolean(read(expanded)[session.key])
@@ -806,7 +813,7 @@ export default function Panel() {
               <Box shrink={false}>
                 <List>
                   <ListItem>
-                    <Text weight="medium">Pinned</Text>
+                    <Text weight="medium">Favourites</Text>
                   </ListItem>
                 </List>
               </Box>
