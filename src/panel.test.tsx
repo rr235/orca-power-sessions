@@ -3,6 +3,7 @@ import { assert, mockHost, mount, test } from 'orca/testing'
 import { storage } from 'orca'
 import { DEMO, DEMO_USAGE, DEMO_WORKTREES } from './fixtures'
 import * as panel from './panel'
+import { saveAction, storedActions } from './servers'
 
 /** The pressable row holding the image named `alt`: an image's alt is not a label. */
 function pinControl(view: Awaited<ReturnType<typeof mount>>, alt: string) {
@@ -19,6 +20,41 @@ function chevron(view: Awaited<ReturnType<typeof mount>>, title: string) {
   const alt = view.findAll({ type: 'Image' }).find((i) => new RegExp(`^(Show|Hide) details of ${title}$`).test(String(i.props.alt)))?.props.alt
   return alt ? pinControl(view, String(alt)) : null
 }
+
+test('single-line steps keep Input rows while legacy multiline commands save unchanged', async () => {
+  const project = DEMO.projects.find((p) => p.id === 'github:rr235/blog')!
+  const command = 'if true; then\n  bun run dev\nfi'
+  let actions = storedActions([{ id: 'legacy', name: 'Legacy', command, projectId: project.id, path: project.path, url: 'http://localhost:4000' }])!
+  actions.push({ ...actions[0], id: 'single', name: 'Single', command: 'bun run dev', steps: ['bun run dev'] })
+  const host = mockHost({
+    requests: {
+      'overview.load': () => ({ ...DEMO, sessions: [], servers: actions.map((a) => ({ ...a, up: false, terminal: null })) }),
+      'session.selected': () => null,
+      'action.save': (input) => {
+        actions = saveAction(actions, input, [project], 'unused')
+        return null
+      }
+    }
+  })
+  const view = await mount(panel, { host })
+  try {
+    await view.press({ label: 'Edit Single' })
+    assert.equal(view.find({ type: 'Input', label: 'Step 1' } as never)?.props.value, 'bun run dev')
+    assert.equal(view.find({ type: 'Textarea', label: 'Step 1' } as never), null)
+    await view.press({ label: 'Edit Legacy' })
+    assert.equal(view.find({ type: 'Textarea', label: 'Step 1' } as never)?.props.value, command)
+    assert.equal(view.find({ type: 'Textarea', label: 'Step 1' } as never)?.props.rows, 2)
+    assert.equal(view.find({ type: 'Input', label: 'Step 1' } as never), null)
+    assert.equal(view.find({ label: 'Step 2' }), null)
+    await view.type({ type: 'Input', label: 'Name' } as never, 'Renamed', { replace: true })
+    await view.press({ type: 'Button', text: 'Save' })
+    assert.deepEqual([actions[0].name, actions[0].command, actions[0].steps, actions[0].url], ['Renamed', command, [command], 'http://localhost:4000'])
+    assert.deepEqual(view.warnings, [])
+    assert.deepEqual(view.errors, [])
+  } finally {
+    await view.unmount()
+  }
+})
 
 test('shows servers, sessions and projects, and starts a server', async () => {
   const started: string[] = []
@@ -557,9 +593,13 @@ test('edits, adds and deletes quick actions', async () => {
     assert.equal(heading?.props.muted, undefined)
     assert.equal(heading?.props.tone, undefined)
     // Example placeholders, and a muted note under the title for what they leave out.
-    assert.equal(view.find({ type: 'Textarea', label: 'Command' } as never)?.props.placeholder, 'npm run dev')
+    assert.equal(view.find({ type: 'Input', label: 'Step 1' } as never)?.props.placeholder, 'npm run dev')
+    assert.equal(view.find({ type: 'Textarea', label: 'Step 1' } as never), null, 'single-line steps keep Input rows')
     assert.equal(view.find({ type: 'Input', label: 'URL' } as never)?.props.placeholder, 'URL (optional)')
-    const note = view.find({ type: 'Text', text: /^The command runs in the project's main checkout\./ })
+    const note = view.find({ type: 'Text', text: "The commands run serially in order in the project's main checkout." })
+    const urlNote = view.find({ type: 'Text', text: 'Add a URL only if it differs from the one the server prints.' })
+    assert.ok(note && urlNote && note.path < urlNote.path, 'the URL note is its own line, under the first')
+    assert.equal(urlNote?.props.muted, true)
     assert.ok(note && heading && heading.path < note.path, 'the note sits under the title')
     assert.equal(note?.props.muted, true)
     assert.equal(view.find({ type: 'Button', text: 'Delete' }), null, 'nothing to delete yet')
@@ -574,9 +614,11 @@ test('edits, adds and deletes quick actions', async () => {
     assert.equal(view.find({ type: 'Button', text: 'Save' }), null)
     // It needs a name, a command and a project before it is sent.
     // No visible labels, in the order project, name, command.
-    for (const type of ['Select', 'Input', 'Textarea']) {
-      assert.equal(view.find({ type } as never)?.props.labelHidden, true, `${type} label hidden`)
+    for (const label of ['Project', 'Name', 'Step 1']) {
+      assert.equal(view.find({ label } as never)?.props.labelHidden, true, `${label} label hidden`)
     }
+    // One step has nothing to remove.
+    assert.equal(view.find({ label: 'Remove step 1' }), null)
     const form = view.find({ type: 'Select', label: 'Project' } as never)
     assert.ok(form && form.path < (nameInput()?.path ?? ''), `project before name: ${form?.path} ${nameInput()?.path}`)
     await view.press({ type: 'Button', text: 'Add +' })
@@ -586,11 +628,19 @@ test('edits, adds and deletes quick actions', async () => {
     await view.press({ type: 'Button', text: 'Add +' })
     assert.ok(view.find({ text: 'Give it a command.' }))
     assert.equal(saved.length, 0)
-    await view.type({ type: 'Textarea', label: 'Command' } as never, 'bun run docs')
-    // The URL comes under the command, is optional, and must be a web address when given.
+    await view.type({ type: 'Input', label: 'Step 1' } as never, 'bun run docs')
+    // Add step adds a row under the last; with several, each can be removed.
+    await view.press({ type: 'Button', text: 'Add step +' })
+    assert.equal(view.find({ type: 'Input', label: 'Step 2' } as never)?.props.placeholder, 'Next command')
+    await view.type({ type: 'Input', label: 'Step 2' } as never, 'bun run build')
+    await view.press({ type: 'Button', text: 'Add step +' })
+    await view.press({ label: 'Remove step 3' })
+    assert.equal(view.find({ type: 'Input', label: 'Step 3' } as never), null)
+    assert.equal(view.find({ type: 'Button', text: '↑' }), null, 'no reordering')
+    // The URL comes under the steps, is optional, and must be a web address when given.
     const url = view.find({ type: 'Input', label: 'URL' } as never)
-    const command = view.find({ type: 'Textarea', label: 'Command' } as never)
-    assert.ok(url && command && command.path < url.path, 'URL under the command')
+    const command = view.find({ type: 'Button', text: 'Add step +' })
+    assert.ok(url && command && command.path < url.path, 'URL under the steps')
     assert.equal(url?.props.labelHidden, true)
     assert.equal(view.findAll({ type: 'Image' }).length, icons, 'choosing a project shows no icon in the form')
     await view.type({ type: 'Input', label: 'URL' } as never, 'ftp://x')
@@ -599,7 +649,7 @@ test('edits, adds and deletes quick actions', async () => {
     assert.equal(saved.length, 0)
     await view.type({ type: 'Input', label: 'URL' } as never, 'localhost:4000', { replace: true })
     await view.press({ type: 'Button', text: 'Add +' })
-    assert.deepEqual(saved, [{ name: 'Docs', command: 'bun run docs', projectId: 'github:rr235/blog', url: 'localhost:4000' }])
+    assert.deepEqual(saved, [{ name: 'Docs', steps: ['bun run docs', 'bun run build'], projectId: 'github:rr235/blog', url: 'localhost:4000' }])
     assert.equal(nameInput(), null, 'saving closes the form')
     saved.length = 0
 
@@ -609,20 +659,27 @@ test('edits, adds and deletes quick actions', async () => {
     const editPrimer = view.find({ label: 'Edit Primer' })
     assert.ok(editPrimer && (view.find({ label: 'Run Primer' })?.path ?? '') < editPrimer.path, 'edit sits at the right of the row')
 
-    // Its form opens where the add form does, above Add action, and the row's button closes it.
+    // Its form opens under its row, where Edit was pressed, and the row's button closes it.
     await view.press(view.find({ label: 'Edit Primer' }) as never)
     allInView()
     assert.equal(nameInput()?.props.value, 'Primer')
-    // Titled Edit action, and the Add action line under it reads Edit action while it is open.
+    const closePrimer = view.find({ label: 'Close Primer' })
+    // Rows are keyed by action id, so the form shares the Primer row's group and follows its row.
+    const row = closePrimer?.path ?? ''
+    const group = row.slice(0, row.indexOf('/primer/') + '/primer/'.length)
+    const formPath = nameInput()?.path ?? ''
+    assert.ok(row && formPath.startsWith(group) && row < formPath, `the form sits under its row: ${row} ${formPath}`)
+    // Titled Edit action; the line under the actions still reads Add action.
     const editTitles = view.findAll({ type: 'Text', text: 'Edit action' })
-    assert.equal(editTitles.length, 2, 'the title and the line under the form')
+    assert.equal(editTitles.length, 1, 'only the title')
     assert.equal(editTitles[0].props.size, 'sm')
-    assert.equal(view.find({ type: 'Text', text: 'Add action' }), null)
-    assert.ok((nameInput()?.path ?? '') < editTitles[1].path, 'the form sits above the line')
-    assert.ok(view.find({ label: 'Close Primer' }), 'the row can close its form')
-    assert.equal(view.find({ type: 'IconButton', label: 'Edit action' })?.props.icon, 'close', 'the line closes it too')
-    assert.equal(view.find({ type: 'IconButton', label: 'Edit action' })?.props.tooltip, 'Close edit action')
-    assert.equal(view.find({ label: 'Close Primer' })?.props.tooltip, 'Close edit action')
+    assert.equal(view.find({ type: 'IconButton', label: 'Add action' })?.props.icon, 'add')
+    assert.equal(closePrimer?.props.tooltip, 'Close edit action')
+    // Add action switches to a new action's form.
+    await view.press(view.find({ type: 'IconButton', label: 'Add action' }) as never)
+    assert.equal(nameInput()?.props.value, '')
+    assert.equal(view.find({ label: 'Close Primer' }), null)
+    await view.press(view.find({ label: 'Edit Primer' }) as never)
     // An extra small Delete on the left; Cancel, then Save, on the right.
     const del = view.find({ type: 'Button', text: 'Delete' })
     const save = view.find({ type: 'Button', text: 'Save' })
@@ -635,7 +692,7 @@ test('edits, adds and deletes quick actions', async () => {
     await view.select({ type: 'Select', label: 'Project' } as never, 'github:rr235/blog')
     await view.press({ type: 'Button', text: 'Save' })
     // The form starts with the address the action has.
-    assert.deepEqual(saved, [{ name: 'Primer docs', command: 'bun run dev:primer', projectId: 'github:rr235/blog', url: 'http://localhost:3200', id: 'primer' }])
+    assert.deepEqual(saved, [{ name: 'Primer docs', steps: ['bun run dev:primer'], projectId: 'github:rr235/blog', url: 'http://localhost:3200', id: 'primer' }])
     assert.equal(nameInput(), null, 'saving closes the form')
 
     await view.press(view.find({ label: 'Edit Blog' }) as never)

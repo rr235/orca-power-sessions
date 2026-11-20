@@ -75,15 +75,32 @@ export function printedUrl(lines: readonly string[]): string | null {
 
 const tidy = (url: string) => url.replace('://0.0.0.0', '://localhost').replace(/[/.,;:]+$/, '')
 
-/** The stored list, or null when nothing valid is stored yet. */
+/** The command a terminal runs for an action's steps: each after the one before succeeds. One step
+ *  is its command as typed. */
+export const runCommand = (steps: readonly string[]): string => steps.join(' && ')
+
+const isStep = (step: unknown): step is string => typeof step === 'string'
+
+/** The stored list, or null when nothing valid is stored yet. An action stored with one `command`,
+ *  before actions had steps, is read as that one step, as is one whose `command` a version before
+ *  steps changed since. */
 export function storedActions(value: unknown): QuickAction[] | null {
   if (!Array.isArray(value)) {
     return null
   }
-  return value.filter(
-    (a): a is QuickAction =>
-      Boolean(a) && typeof a.id === 'string' && typeof a.name === 'string' && typeof a.command === 'string' && typeof a.path === 'string'
-  )
+  return value.flatMap((a) => {
+    if (!a || typeof a.id !== 'string' || typeof a.name !== 'string' || typeof a.path !== 'string') {
+      return []
+    }
+    const steps = Array.isArray(a.steps) && a.steps.length > 0 && a.steps.every(isStep) ? (a.steps as string[]) : null
+    if (steps && (typeof a.command !== 'string' || runCommand(steps) === a.command)) {
+      return [{ ...a, steps, command: runCommand(steps) } as QuickAction]
+    }
+    if (typeof a.command === 'string') {
+      return [{ ...a, steps: [a.command] } as QuickAction]
+    }
+    return []
+  })
 }
 
 /** Links each action without a project to the Orca project whose main checkout is its folder. */
@@ -101,14 +118,14 @@ const invalid = (message: string) => Object.assign(new Error(message), { code: '
 
 /**
  * The list with `input` added, or replacing the action with its id. A typed `url` is the address
- * (empty: read it at the next Run); without one, a new command or project forgets the address the
- * server printed.
+ * (empty: read it at the next Run); without one, new steps or a new project forget the address the
+ * server printed. Empty steps are dropped.
  */
 export function saveAction(actions: QuickAction[], input: QuickActionInput, projects: readonly Project[], newId: string): QuickAction[] {
   const name = input.name.trim()
-  const command = input.command.trim()
+  const steps = (Array.isArray(input.steps) ? input.steps : []).filter(isStep).map((step) => step.trim()).filter(Boolean)
   const project = projects.find((p) => p.id === input.projectId)
-  if (!name || !command) {
+  if (!name || steps.length === 0) {
     throw invalid('A quick action needs a name and a command.')
   }
   const typed = input.url === undefined ? undefined : normalUrl(input.url)
@@ -123,18 +140,19 @@ export function saveAction(actions: QuickAction[], input: QuickActionInput, proj
     throw invalid(`Unknown quick action ${input.id}`)
   }
   if (!existing) {
-    return [...actions, { id: newId, name, command, projectId: project.id, path: project.path, url: typed ?? null, urlTyped: Boolean(typed) }]
+    return [...actions, { id: newId, name, steps, command: runCommand(steps), projectId: project.id, path: project.path, url: typed ?? null, urlTyped: Boolean(typed) }]
   }
   const moved = existing.projectId !== project.id || existing.path !== project.path
   // The form sends back the address it showed: unchanged, it is still printed or typed as before.
   const typedNew = typed !== undefined && typed !== existing.url
   const keepsTyped = !typedNew && Boolean(existing.urlTyped && existing.url)
-  const forgets = moved || command !== existing.command
+  const forgets = moved || runCommand(steps) !== runCommand(existing.steps)
   const url = typedNew ? typed : keepsTyped || !forgets ? existing.url : null
   const next: QuickAction = {
     ...existing,
     name,
-    command,
+    steps,
+    command: runCommand(steps),
     projectId: project.id,
     path: project.path,
     url,

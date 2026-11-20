@@ -27,6 +27,7 @@ import {
 } from 'orca'
 import { tabOfPane } from './overview'
 import type { Overview, Project, QuickActionInput, PullRequestInfo, Selected, Server, Session, SessionUsage } from './protocol'
+import { runCommand } from './servers'
 import { normalUrl } from './url'
 import { Icon, SessionDetails } from './session-details'
 
@@ -38,7 +39,7 @@ const SELECTED_MS = 2000
 const SELECTED_HOLD_MS = 3000
 
 // The last overview, kept across panel runs so reopening shows it at once while it refreshes.
-const overview = atom<Overview | null>('overview', null, { persist: 'plugin', version: 7, migrate: () => null })
+const overview = atom<Overview | null>('overview', null, { persist: 'plugin', version: 8, migrate: () => null })
 // Which sections are open, kept across panel runs.
 const sections = atom<{ sessions?: boolean; actions: boolean }>('sections', { sessions: true, actions: true }, { persist: 'plugin' })
 // Sessions whose details are open, by session key. Orca runs a panel per workspace, and showing a
@@ -70,13 +71,14 @@ const usageLoading = atom<Record<string, boolean>>({})
 const prLoading = atom<Record<string, boolean>>({})
 const loadError = atom<string | null>(null)
 const busy = atom<Record<string, boolean>>({})
-// The quick action whose form is open above Add action: its id, NEW_ACTION for a new one, or null.
+// The quick action whose form is open: its id, NEW_ACTION for a new one, or null.
 const NEW_ACTION = ':new'
 const editing = atom<string | null>(null)
 const closeForm = () => set(editing, null)
 // What the form holds, apart from the overview, so a refresh never replaces what is being typed.
-type Draft = { name: string; command: string; projectId: string; url: string }
-const draft = atom<Draft>({ name: '', command: '', projectId: '', url: '' })
+// `steps` holds one entry per command row, at least one.
+type Draft = { name: string; steps: string[]; projectId: string; url: string }
+const draft = atom<Draft>({ name: '', steps: [''], projectId: '', url: '' })
 const formError = atom<string | null>(null)
 const actionError = atom<string | null>(null)
 
@@ -259,7 +261,7 @@ const compactSession = (session: Session) =>
 
 /** Opens the form for an action, or for a new one. */
 function editAction(server: Server | null): void {
-  set(draft, { name: server?.name ?? '', command: server?.command ?? '', projectId: server?.projectId ?? '', url: server?.url ?? '' })
+  set(draft, { name: server?.name ?? '', steps: server?.steps ?? [''], projectId: server?.projectId ?? '', url: server?.url ?? '' })
   set(formError, null)
   set(editing, server?.id ?? NEW_ACTION)
 }
@@ -272,7 +274,7 @@ export function draftProblem(d: Draft): string | null {
   if (!d.name.trim()) {
     return 'Give it a name.'
   }
-  if (!d.command.trim()) {
+  if (!d.steps.some((step) => step.trim())) {
     return 'Give it a command.'
   }
   // The address is optional: empty, it is read from the server's output at the next Run.
@@ -286,7 +288,8 @@ async function saveDraft(id: string | null): Promise<void> {
     set(formError, problem)
     return
   }
-  const input: QuickActionInput = { name: d.name, command: d.command, projectId: d.projectId, url: d.url, ...(id ? { id } : {}) }
+  const steps = d.steps.map((step) => step.trim()).filter(Boolean)
+  const input: QuickActionInput = { name: d.name, steps, projectId: d.projectId, url: d.url, ...(id ? { id } : {}) }
   await act('action:save', () => plugin.request('action.save', input), `Could not save ${d.name.trim()}.`)
   if (!read(actionError)) {
     closeForm()
@@ -357,7 +360,7 @@ function ServerCard({ server }: { server: Server }) {
     <IconButton
       icon="play"
       label={`Run ${server.name}`}
-      tooltip={`Run: ${server.command}`}
+      tooltip={`Run: ${runCommand(server.steps)}`}
       size="xs"
       variant="ghost"
       tone="accent"
@@ -393,7 +396,7 @@ function ServerCard({ server }: { server: Server }) {
         />
       ) : null}
       {/* The row ends with the green dot of a running server, the same as a working session's, or the
-          edit button of a stopped one, whose form opens above Add action and which then closes it. */}
+          edit button of a stopped one, whose form opens under the row and which then closes it. */}
       {server.up ? (
         <Box direction="row" align="center" justify="center" width={DOT_PX} minWidth={DOT_PX} shrink={false}>
           <Text size="xs" tone="success">
@@ -706,7 +709,43 @@ function LabelledButton({ text, icon, tooltip, onPress }: { text: string; icon: 
   )
 }
 
-/** The form for one quick action: its name, its command, and the project whose checkout runs it. */
+/**
+ * An action's commands, a row each in the order they run. With more than one, each row can be
+ * removed; Add step adds an empty row at the end.
+ */
+function StepRows({ steps, onChange }: { steps: string[]; onChange: (steps: string[]) => void }) {
+  const several = steps.length > 1
+  return (
+    <Box gap="xs">
+      {steps.map((step, i) => {
+        const field = {
+          label: `Step ${i + 1}`,
+          labelHidden: true,
+          value: step,
+          placeholder: i === 0 ? 'npm run dev' : 'Next command',
+          onChange: (value: string) => onChange(steps.map((s, j) => (j === i ? value : s)))
+        }
+        return (
+          <Box key={i} direction="row" align="center" gap="xs">
+            <Box grow minWidth={0}>
+              {step.includes('\n') ? <Textarea {...field} rows={2} /> : <Input {...field} />}
+            </Box>
+            {several ? (
+              <IconButton icon="close" label={`Remove step ${i + 1}`} size="xs" variant="ghost" onPress={() => onChange(steps.filter((_, j) => j !== i))} />
+            ) : null}
+          </Box>
+        )
+      })}
+      <Box direction="row">
+        <Button variant="ghost" size="xs" tooltip="Add a command to run after the last one" onPress={() => onChange([...steps, ''])}>
+          Add step +
+        </Button>
+      </Box>
+    </Box>
+  )
+}
+
+/** The form for one quick action: its name, its commands, and the project whose checkout runs them. */
 function ActionForm({ id, servers, projects }: { id: string | null; servers: Server[]; projects: Project[] }) {
   const d = read(draft)
   const problem = read(formError)
@@ -725,7 +764,10 @@ function ActionForm({ id, servers, projects }: { id: string | null; servers: Ser
         <Text size="sm">{server ? 'Edit action' : 'Add new action'}</Text>
         {/* The placeholders show examples only, so the note says what is optional. */}
         <Text size="xs" muted>
-          The command runs in the project's main checkout. Add a URL only if it differs from the one the server prints.
+          The commands run serially in order in the project's main checkout.
+        </Text>
+        <Text size="xs" muted>
+          Add a URL only if it differs from the one the server prints.
         </Text>
       </Box>
       {/* No visible labels: the placeholders name the fields, the hidden labels serve screen readers.
@@ -745,14 +787,7 @@ function ActionForm({ id, servers, projects }: { id: string | null; servers: Ser
           <Input label="Name" labelHidden value={d.name} placeholder="Name" maxLength={40} onChange={(name) => edit({ name })} />
         </Box>
       </Box>
-      <Textarea
-        label="Command"
-        labelHidden
-        value={d.command}
-        placeholder="npm run dev"
-        rows={2}
-        onChange={(command) => edit({ command })}
-      />
+      <StepRows steps={d.steps} onChange={(steps) => edit({ steps })} />
       <Input label="URL" labelHidden value={d.url} placeholder="URL (optional)" onChange={(url) => edit({ url })} />
       {problem ? (
         <Text size="xs" tone="danger">
@@ -904,29 +939,39 @@ export default function Panel() {
                 <Stack gap="md">
                   {data.servers.length ? (
                     // Inset by the header's own padding, so Run sits under its arrow and the names under its title.
+                    // An action's edit form opens under its row, where Edit was pressed: Orca's
+                    // components cannot move focus or scroll to it.
                     <Box gap="sm" paddingX="xs">
-                      {data.servers.map((server) => (
-                        <ServerCard key={server.id} server={server} />
-                      ))}
+                      {data.servers.map((server) =>
+                        form === server.id ? (
+                          <Stack key={server.id} gap="none">
+                            <ServerCard server={server} />
+                            <ActionForm key={form} id={form} servers={data.servers} projects={data.projects} />
+                          </Stack>
+                        ) : (
+                          <ServerCard key={server.id} server={server} />
+                        )
+                      )}
                     </Box>
                   ) : (
                     <Text size="xs" muted>
                       Click the + icon to create quick action commands.
                     </Text>
                   )}
-                  {/* Add action sits under the servers; the form for a new action or the one being edited
-                      opens between them and it, and Add action's button then closes it. */}
+                  {/* Add action sits under the servers; the form for a new action opens between them
+                      and it, and Add action's button then closes it. While an action is edited, it
+                      opens the new action form instead. */}
                   <Stack gap="none">
-                    {form ? (
+                    {form === NEW_ACTION ? (
                       <Box paddingY="sm">
-                        <ActionForm key={form} id={form === NEW_ACTION ? null : form} servers={data.servers} projects={data.projects} />
+                        <ActionForm key={form} id={null} servers={data.servers} projects={data.projects} />
                       </Box>
                     ) : null}
                     <LabelledButton
-                      text={form && form !== NEW_ACTION ? 'Edit action' : 'Add action'}
-                      icon={form ? 'close' : 'add'}
-                      tooltip={form ? (form === NEW_ACTION ? 'Close new action' : 'Close edit action') : undefined}
-                      onPress={() => (form ? closeForm() : editAction(null))}
+                      text="Add action"
+                      icon={form === NEW_ACTION ? 'close' : 'add'}
+                      tooltip={form === NEW_ACTION ? 'Close new action' : undefined}
+                      onPress={() => (form === NEW_ACTION ? closeForm() : editAction(null))}
                     />
                   </Stack>
                 </Stack>

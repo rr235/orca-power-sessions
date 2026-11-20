@@ -49,11 +49,13 @@ Apart from that first agent in an empty checkout, Power Sessions does not create
 ## Quick actions
 
 1. Press the **+** beside **Add action**, below the session list.
-2. Pick a project, then enter a name and a command, such as `bun run dev`.
+2. Pick a project, then enter a name and a command, such as `bun run dev`. For more steps, such as
+   `bun install` first, press **Add step +**.
 3. Add a URL only if it differs from the one the server prints.
 4. Press **Add +**, then the action’s **Run** button.
 
-The command runs in the project’s main checkout, in a terminal the action then watches. A green dot
+The steps run in order in the project’s main checkout, each once the one before succeeds, in one
+terminal the action then watches. A green dot
 marks a running action: the process on its port was started in that terminal. Closing the terminal
 or stopping the server clears the dot, and another service holding the same port never counts.
 When a Run prints its URL on a different port, the action switches to it, unless you typed one.
