@@ -56,6 +56,79 @@ test('single-line steps keep Input rows while legacy multiline commands save unc
   }
 })
 
+test('shows Stop disabled at once on Run, and enabled once the command runs', async () => {
+  // The command starts after the look that follows Run, as a new terminal's shell does.
+  let loadsAfterStart = -1
+  let fails = false
+  const primer = (up: boolean) => ({ ...DEMO, servers: DEMO.servers.map((s) => (s.id === 'primer' ? { ...s, up, terminal: up ? 'term_primer' : null } : s)) })
+  const host = mockHost({
+    requests: {
+      'overview.load': () => primer(loadsAfterStart >= 0 && ++loadsAfterStart > 1),
+      'session.usage': () => ({}),
+      'pr.info': () => ({}),
+      'server.start': () => {
+        if (fails) {
+          throw new Error('no terminal')
+        }
+        loadsAfterStart = 0
+        return null
+      }
+    }
+  })
+  const view = await mount(panel, { host })
+  const stop = () => view.find({ type: 'IconButton', label: 'Stop Primer' } as never)
+  try {
+    // A start that fails shows Run again.
+    fails = true
+    await view.press(view.find({ label: 'Run Primer' }) as never)
+    assert.equal(stop(), null)
+    assert.ok(view.find({ label: 'Run Primer' }))
+    fails = false
+
+    await view.press(view.find({ label: 'Run Primer' }) as never)
+    assert.equal(view.find({ label: 'Run Primer' }), null, 'Run gives way at once')
+    assert.deepEqual([stop()?.props.disabled, stop()?.props.tooltip], [true, 'Starting'], 'a disabled Stop until it runs')
+    await new Promise((resolve) => setTimeout(resolve, 1600))
+    await view.settled()
+    assert.equal(stop()?.props.disabled, false, 'Stop works at the next look, a second later')
+    const loads = loadsAfterStart
+    await new Promise((resolve) => setTimeout(resolve, 1200))
+    assert.equal(loadsAfterStart, loads, 'no more looks once it runs')
+  } finally {
+    await view.unmount()
+  }
+})
+
+test('shows Run again soon after a command with no address ends, and leaves servers to the usual cycle', async () => {
+  let loads = 0
+  let syncRunning = true
+  const sync = { id: 'sync', name: 'Sync', steps: ['git pull', 'bun run build'], projectId: null, url: null, up: true, terminal: 'term_sync' }
+  const host = mockHost({
+    requests: {
+      'overview.load': () => {
+        loads++
+        // Platform stays up on its address; Sync's command ends after the first look.
+        return { ...DEMO, servers: [...DEMO.servers.filter((s) => s.id === 'platform'), { ...sync, up: syncRunning }] }
+      },
+      'session.usage': () => ({}),
+      'pr.info': () => ({})
+    }
+  })
+  const view = await mount(panel, { host })
+  try {
+    assert.ok(view.find({ label: 'Stop Sync' }))
+    syncRunning = false
+    await new Promise((resolve) => setTimeout(resolve, 2400))
+    await view.settled()
+    assert.ok(view.find({ label: 'Run Sync' }), 'Run is back within about two seconds')
+    const after = loads
+    await new Promise((resolve) => setTimeout(resolve, 2400))
+    assert.equal(loads, after, 'a server on its address waits for the usual cycle')
+  } finally {
+    await view.unmount()
+  }
+})
+
 test('shows servers, sessions and projects, and starts a server', async () => {
   const started: string[] = []
   const compacted: string[] = []
