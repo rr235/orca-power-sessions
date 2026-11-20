@@ -80,10 +80,10 @@ export const DEMO: Overview = {
     }
   ],
   projects: [
-    { id: 'github:rr235/crm', name: 'CRM', repo: 'rr235/crm', path: '/w/crm', repoIds: ['r4'], agents: 0, worktrees: 1 },
-    { id: 'github:rr235/blog', name: 'Personal Blog', repo: 'rr235/blog', path: '/w/blog', repoIds: ['r3'], agents: 1, worktrees: 1 },
-    { id: 'github:mountin-io/platform', name: 'Platform', repo: 'mountin-io/platform', path: '/w/platform', repoIds: ['r1'], agents: 1, worktrees: 1 },
-    { id: 'github:rr235/planner', name: 'Planner', repo: 'rr235/planner', path: '/w/planner', repoIds: ['r5'], agents: 0, worktrees: 1 }
+    { id: 'github:rr235/crm', name: 'CRM', repo: 'rr235/crm', path: '/w/crm', repoIds: ['r4'], agents: 0 },
+    { id: 'github:rr235/blog', name: 'Personal Blog', repo: 'rr235/blog', path: '/w/blog', repoIds: ['r3'], agents: 1 },
+    { id: 'github:mountin-io/platform', name: 'Platform', repo: 'mountin-io/platform', path: '/w/platform', repoIds: ['r1'], agents: 1 },
+    { id: 'github:rr235/planner', name: 'Planner', repo: 'rr235/planner', path: '/w/planner', repoIds: ['r5'], agents: 0 }
   ]
 }
 
@@ -117,7 +117,7 @@ export const DEMO_WORKTREES: Overview = {
     ...DEMO.sessions.slice(1)
   ],
   projects: DEMO.projects.map((p) =>
-    p.id === PLATFORM ? { ...p, agents: 3, worktrees: 3 } : p.id === 'github:rr235/blog' ? { ...p, worktrees: 2 } : p
+    p.id === PLATFORM ? { ...p, agents: 3 } : p
   )
 }
 

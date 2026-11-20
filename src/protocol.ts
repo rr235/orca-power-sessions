@@ -44,8 +44,6 @@ export type Project = {
   /** The ids of its source repos: a workspace's worktree id starts with its repo's id, then `::`. */
   repoIds: string[]
   agents: number
-  /** Orca workspaces (worktrees) of the project, the main checkout included. */
-  worktrees: number
 }
 
 export type AgentState = 'working' | 'blocked' | 'waiting' | 'done'

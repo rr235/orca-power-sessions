@@ -227,9 +227,28 @@ type SessionDetailsProps = {
   titleLoading: Record<string, boolean>
   compacting: boolean
   onCompact: () => void
+  /** Adds the session to Favourites or removes it; null when Orca does not name its pane, so it could not stay. */
+  favourite: { on: boolean; onPress: () => void } | null
 }
 
-function StatusFact({ session, compacting, onCompact }: Pick<SessionDetailsProps, 'session' | 'compacting' | 'onCompact'>) {
+/** A star that adds the session to Favourites, or, red while it is one, removes it; the tooltip says which. */
+function FavouriteButton({ session, favourite }: { session: Session; favourite: NonNullable<SessionDetailsProps['favourite']> }) {
+  return (
+    <Box shrink={false}>
+      <IconButton
+        icon="star"
+        label={favourite.on ? `Remove ${session.title} from Favourites` : `Add ${session.title} to Favourites`}
+        tooltip={favourite.on ? 'Remove from Favourites' : 'Add to Favourites'}
+        size="xs"
+        variant="outline"
+        tone={favourite.on ? 'danger' : undefined}
+        onPress={favourite.onPress}
+      />
+    </Box>
+  )
+}
+
+function StatusFact({ session, compacting, onCompact, favourite }: Pick<SessionDetailsProps, 'session' | 'compacting' | 'onCompact' | 'favourite'>) {
   const status = statusOf(session)
   const working = status.icon === 'working'
   // Active is the green dot and idle the grey one the session row shows, both static; other states
@@ -254,6 +273,8 @@ function StatusFact({ session, compacting, onCompact }: Pick<SessionDetailsProps
           <Text size="xs">{status.label}</Text>
         </Fact>
       </Box>
+      {/* The Favourites star, just before the time. */}
+      {favourite ? <FavouriteButton session={session} favourite={favourite} /> : null}
       {/* How long it has been in this state, just before Compact. */}
       {session.since ? (
         <Box shrink={false}>
@@ -281,13 +302,13 @@ function StatusFact({ session, compacting, onCompact }: Pick<SessionDetailsProps
 }
 
 /** What Orca and the agent's transcript say about a session, under its row while open. */
-export function SessionDetails({ session, stats, loading, info, titleLoading, compacting, onCompact }: SessionDetailsProps) {
+export function SessionDetails({ session, stats, loading, info, titleLoading, compacting, onCompact, favourite }: SessionDetailsProps) {
   // Only a Claude or Codex transcript has numbers to wait for, and only the first read shows
   // skeletons: a refresh keeps the numbers already shown.
   const pending = !stats && loading && Boolean(session.agent && AGENT_LABEL[session.agent])
   return (
     <Box background="accent" radius="lg" padding="sm" gap="sm" margin="xs">
-      <StatusFact session={session} compacting={compacting} onCompact={onCompact} />
+      <StatusFact session={session} compacting={compacting} onCompact={onCompact} favourite={favourite} />
       {pending ? (
         // One line each for the model, the context and the turns.
         <Box gap="xs">

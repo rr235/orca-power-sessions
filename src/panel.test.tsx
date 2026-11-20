@@ -4,7 +4,7 @@ import { storage } from 'orca'
 import { DEMO, DEMO_USAGE, DEMO_WORKTREES } from './fixtures'
 import * as panel from './panel'
 
-/** The pressable row holding the image named `alt` (pin, unpin or chat): an image's alt is not a label. */
+/** The pressable row holding the image named `alt`: an image's alt is not a label. */
 function pinControl(view: Awaited<ReturnType<typeof mount>>, alt: string) {
   const image = view.findAll({ type: 'Image' }).find((i) => i.props.alt === alt)
   if (!image) {
@@ -12,6 +12,12 @@ function pinControl(view: Awaited<ReturnType<typeof mount>>, alt: string) {
   }
   const rows = view.findAll({ type: 'ListItem' }).filter((row) => image.path.startsWith(row.path))
   return rows.sort((a, b) => b.path.length - a.path.length)[0] ?? null
+}
+
+/** The chevron that shows or hides a session's details. */
+function chevron(view: Awaited<ReturnType<typeof mount>>, title: string) {
+  const alt = view.findAll({ type: 'Image' }).find((i) => new RegExp(`^(Show|Hide) details of ${title}$`).test(String(i.props.alt)))?.props.alt
+  return alt ? pinControl(view, String(alt)) : null
 }
 
 test('shows servers, sessions and projects, and starts a server', async () => {
@@ -58,35 +64,37 @@ test('shows servers, sessions and projects, and starts a server', async () => {
     // The details open under the session, with the transcript's numbers, and close again.
     assert.equal(view.find({ text: 'Opus 5.5' }), null)
     assert.equal(view.find({ text: 'issue-212-onboarding' }), null, 'the branch moved into the details')
-    // The row toggles details; the terminal button at the right shows the session's tab.
+    // The row shows the session's tab; the chevron at the right toggles details.
     const row = (title: string) => ({ type: 'ListItem', text: new RegExp(title) }) as const
-    assert.equal(view.find({ type: 'IconButton', label: /details of/ }), null, 'no chevron')
+    const toggle = async (title: string) => view.press(chevron(view, title) as never)
     // Orca shows the chat's tab, so its title is in normal text with its details closed.
     const title = (text: string) => view.find({ type: 'Text', text })?.props.muted
     assert.equal(title('Review search ranking change'), false, 'the tab Orca shows')
     assert.equal(title('Draft post layout'), true, 'a tab Orca does not show')
     // The workspace Orca shows names its project in normal text, here the group outside every project.
-    const project = (text: string) => view.findAll({ type: 'Text', text }).find((n) => n.props.size === 'sm')?.props.muted
+    const project = (text: string) => view.findAll({ type: 'Text', text }).find((n) => n.props.size === 'xs')?.props.muted
     assert.equal(project('mountin-knowledge-base'), false, 'the project Orca shows')
     assert.equal(project('Platform'), true, 'a project Orca does not show')
-    await view.press({ type: 'ListItem', text: /Onboarding checklist for new tenants/ })
-    assert.deepEqual(focused, [], 'pressing the title leaves Orca on its tab')
-    assert.ok(view.find({ text: /^Opus 5\.5,\s*High$/ }), 'pressing the title opens the details')
-    assert.equal(title('Onboarding checklist for new tenants'), true, 'open details leave a tab Orca does not show muted')
     const line = view.find(row('Onboarding checklist for new tenants'))
-    const tab = view.find({ type: 'IconButton', label: 'Show Onboarding checklist for new tenants tab' })
-    assert.ok(line && tab && line.path < tab.path && tab.props.icon === 'terminal', 'a terminal button after the title')
-    assert.equal(tab?.props.variant, 'solid', 'the terminal button is solid')
-    assert.equal(tab?.props.tone, 'success', 'the terminal button is green')
-    await view.press(tab as never)
-    assert.deepEqual(focused, ['p1 /w/platform'], 'the terminal button shows its tab in Orca')
+    const closed = view.findAll({ type: 'Image' }).find((i) => i.props.alt === 'Show details of Onboarding checklist for new tenants')
+    assert.ok(line && closed && line.path < closed.path, 'a chevron after the title')
+    assert.match(String(closed?.props.src), /^assets\/details\/chevron-right-(dark|light)\.png$/, 'pointing right while closed')
+    await toggle('Onboarding checklist for new tenants')
+    assert.deepEqual(focused, [], 'the chevron leaves Orca on its tab')
+    assert.ok(view.find({ text: /^Opus 5\.5,\s*High$/ }), 'the chevron opens the details')
+    const openChevron = view.findAll({ type: 'Image' }).find((i) => i.props.alt === 'Hide details of Onboarding checklist for new tenants')
+    assert.match(String(openChevron?.props.src), /^assets\/details\/chevron-down-(dark|light)\.png$/, 'pointing down while open')
+    assert.equal(title('Onboarding checklist for new tenants'), true, 'open details leave a tab Orca does not show muted')
+    await view.press(row('Onboarding checklist for new tenants'))
+    assert.deepEqual(focused, ['p1 /w/platform'], 'the title shows its tab in Orca')
     assert.equal(title('Review search ranking change'), true, 'the pressed session is the one shown now')
     assert.equal(project('Platform'), false, 'and its project')
     assert.equal(project('mountin-knowledge-base'), true)
-    await view.press({ type: 'ListItem', text: /Onboarding checklist for new tenants/ })
-    assert.equal(view.find({ text: /^Opus 5\.5,\s*High$/ }), null, 'pressing the title again closes the details')
-    await view.press({ type: 'ListItem', text: /Onboarding checklist for new tenants/ })
-    assert.deepEqual(focused, ['p1 /w/platform'], 'title presses never focus the session')
+    assert.ok(view.find({ text: /^Opus 5\.5,\s*High$/ }), 'the title leaves the details open')
+    await toggle('Onboarding checklist for new tenants')
+    assert.equal(view.find({ text: /^Opus 5\.5,\s*High$/ }), null, 'the chevron again closes the details')
+    await toggle('Onboarding checklist for new tenants')
+    assert.deepEqual(focused, ['p1 /w/platform'], 'chevron presses never focus the session')
     assert.ok(view.find({ text: /^Opus 5\.5,\s*High$/ }), 'model and effort on one line')
     assert.ok(!view.find({ type: 'ListItem', text: /Onboarding checklist for new tenants/ })?.props.current, 'an open row has no background')
     // How long the session has been in its state sits just before Compact, which waits while a turn runs.
@@ -130,16 +138,16 @@ test('shows servers, sessions and projects, and starts a server', async () => {
     assert.ok(view.find({ type: 'Text', text: 'active' }), 'the active status')
     assert.deepEqual(view.warnings, [])
     assert.deepEqual(view.refusals, [])
-    await view.press(row('Onboarding checklist for new tenants'))
+    await toggle('Onboarding checklist for new tenants')
     assert.equal(view.find({ text: /^Opus 5\.5,\s*High$/ }), null)
-    assert.equal(focused.length, 1, 'the row does not change the tab')
+    assert.equal(focused.length, 1, 'the chevron does not change the tab')
     // The quick action closes every open card.
-    await view.press(row('Onboarding checklist for new tenants'))
+    await toggle('Onboarding checklist for new tenants')
     assert.ok(view.find({ text: 'issue-212-onboarding' }), 'details open again')
     await view.press(view.find({ label: 'Refresh sessions' }) as never)
     assert.equal(view.find({ text: 'issue-212-onboarding' }), null, 'the details close')
     // Before any compaction there is no since line, and the total turns take the colour, none up to 20.
-    await view.press(row('Review search ranking change'))
+    await toggle('Review search ranking change')
     assert.equal(view.find({ text: /since the last compaction/ }), null)
     // A chat session, which has no terminal, compacts too.
     const chatCompact = view.find({ label: 'Compact' })
@@ -165,7 +173,7 @@ test('shows a Fable or Astra model name in the warning colour', async () => {
   })
   const view = await mount(panel, { host })
   try {
-    await view.press({ type: 'ListItem', text: /Review search ranking change/ })
+    await view.press(chevron(view, 'Review search ranking change') as never)
     assert.equal(view.find({ type: 'Text', text: /^Fable 5\.2,/ })?.props.tone, 'warning')
     assert.deepEqual(view.warnings, [])
     assert.deepEqual(view.refusals, [])
@@ -183,8 +191,8 @@ test('shares open details with the panels of other workspaces through storage', 
   try {
     await view.settled()
     assert.ok(view.find({ text: /^Opus 5\.5,\s*High$/ }), 'details another panel opened are open here')
-    await view.press({ type: 'ListItem', text: /Onboarding checklist for new tenants/ })
-    await view.press({ type: 'ListItem', text: /Review search ranking change/ })
+    await view.press(chevron(view, 'Onboarding checklist for new tenants') as never)
+    await view.press(chevron(view, 'Review search ranking change') as never)
     assert.deepEqual(host.data().storage.expanded, { p2: true }, 'each change is stored at once')
   } finally {
     await view.unmount()
@@ -196,36 +204,50 @@ test('pins a session above Sessions with its details open, and unpins it', async
     requests: { 'overview.load': () => DEMO, 'session.usage': ({ keys }) => Object.fromEntries(keys.map((key) => [key, DEMO_USAGE[key]])), 'pr.info': () => ({}) }
   })
   const view = await mount(panel, { host })
-  const tabButtons = () => view.findAll({ type: 'IconButton', label: 'Show Onboarding checklist for new tenants tab' } as never)
   try {
     await view.settled()
-    assert.equal(view.find({ type: 'Text', text: 'Pinned' }), null, 'no Pinned area before a pin')
-    await view.press(pinControl(view, 'Pin Onboarding checklist for new tenants') as never)
+    assert.equal(view.find({ type: 'Text', text: 'Favourites' }), null, 'no Pinned area before a pin')
+    assert.equal(view.find({ type: 'IconButton', label: 'Add Onboarding checklist for new tenants to Favourites' }), null, 'the row has no pin')
+    await view.press(chevron(view, 'Onboarding checklist for new tenants') as never)
+    const pin = view.find({ type: 'IconButton', label: 'Add Onboarding checklist for new tenants to Favourites' })
+    const status = view.find({ type: 'Text', text: 'active' })
+    const compact = view.find({ label: 'Compact' })
+    const since = view.find({ type: 'RelativeTime' })
+    assert.ok(pin && status && since && compact && status.path < pin.path && pin.path < since.path && since.path < compact.path, 'the star sits just before the time')
+    assert.equal(pin?.props.icon, 'star')
+    assert.equal(pin?.props.tooltip, 'Add to Favourites')
+    assert.equal(pin?.props.variant, compact?.props.variant, 'outlined like Compact')
+    await view.press(pin as never)
     await view.settled()
     assert.deepEqual(host.data().storage.pinned, ['p1'], 'the pin is stored for every panel')
-    const title = view.find({ type: 'Text', text: 'Pinned' })
+    const title = view.find({ type: 'Text', text: 'Favourites' })
     const sessions = view.find({ type: 'Text', text: 'Sessions' })
     assert.ok(title && sessions && title.path < sessions.path, 'Pinned sits above Sessions')
-    assert.equal(tabButtons().length, 2, 'the session stays in its project too: two rows')
-    const tabs = tabButtons()
-    assert.ok(title && tabs[0].path > title.path && tabs[0].path < (sessions?.path ?? ''), 'one row in Pinned')
-    assert.ok(sessions && tabs[1].path > sessions.path, 'one row under Sessions')
-    assert.equal(pinControl(view, 'Pin Onboarding checklist for new tenants'), null)
-    const unpins = view.findAll({ type: 'Image' }).filter((i) => i.props.alt === 'Unpin Onboarding checklist for new tenants')
-    assert.equal(unpins.length, 2, 'both rows unpin')
+    const unpins = view.findAll({ type: 'IconButton', label: 'Remove Onboarding checklist for new tenants from Favourites' })
+    assert.equal(unpins.length, 1, 'one remove star, in its Favourites card')
+    assert.equal(unpins[0].props.icon, 'star')
+    assert.equal(unpins[0].props.tone, 'danger', 'red while a favourite')
+    assert.equal(unpins[0].props.tooltip, 'Remove from Favourites')
+    const pinnedName = view.findAll({ type: 'Text', text: 'Onboarding checklist for new tenants' })[0]
+    const pinnedStatus = view.find({ type: 'Text', text: 'active' })
+    assert.ok(title && pinnedName && pinnedStatus && pinnedName.path > title.path && unpins[0].path > pinnedStatus.path && unpins[0].path < (sessions?.path ?? ''), 'the red star follows the status in the Favourites card')
+    assert.equal(view.find({ type: 'IconButton', label: 'Add Onboarding checklist for new tenants to Favourites' }), null, 'no add star once a favourite')
+    const row = chevron(view, 'Onboarding checklist for new tenants')
+    assert.ok(sessions && row && row.path > sessions.path, 'the session stays in its project too, with a chevron')
+    assert.equal(view.findAll({ type: 'Image' }).filter((i) => /details of Onboarding checklist for new tenants$/.test(String(i.props.alt))).length, 1, 'no chevron in Pinned')
     assert.equal(view.findAll({ text: 'issue-212-onboarding' }).length, 1, 'one details card, in Pinned')
     assert.ok(view.find({ text: 'issue-212-onboarding' }), 'its details show')
     assert.ok(view.find({ text: /^Opus 5\.5,\s*High$/ }), 'with its numbers')
     // The refresh button closes the list's details, not a pinned card.
     await view.press(view.find({ label: 'Refresh sessions' }) as never)
     assert.ok(view.find({ text: 'issue-212-onboarding' }), 'the pinned card stays')
-    await view.press(pinControl(view, 'Unpin Onboarding checklist for new tenants') as never)
+    await view.press(view.find({ type: 'IconButton', label: 'Remove Onboarding checklist for new tenants from Favourites' }) as never)
     await view.settled()
     assert.deepEqual(host.data().storage.pinned, [])
-    assert.equal(view.find({ type: 'Text', text: 'Pinned' }), null, 'the Pinned area goes with the last pin')
-    assert.ok(pinControl(view, 'Pin Onboarding checklist for new tenants'), 'its project row pins again')
-    assert.equal(tabButtons().length, 1, 'one row, in its project')
-    assert.equal(view.find({ text: 'issue-212-onboarding' }), null, 'with its details closed')
+    assert.equal(view.find({ type: 'Text', text: 'Favourites' }), null, 'the Pinned area goes with the last pin')
+    assert.equal(view.find({ text: 'issue-212-onboarding' }), null, 'its project row has its details closed')
+    await view.press(chevron(view, 'Onboarding checklist for new tenants') as never)
+    assert.ok(view.find({ type: 'IconButton', label: 'Add Onboarding checklist for new tenants to Favourites' }), 'and pins again from them')
     assert.deepEqual(view.warnings, [])
     assert.deepEqual(view.errors, [])
   } finally {
@@ -249,19 +271,20 @@ test('syncs ordered pins across panels, including while Sessions is closed', asy
   const view = await mount(panel, { host })
   try {
     await view.settled()
-    assert.ok(pinControl(view, 'Unpin Review search ranking change'), 'the stored pin shows')
+    assert.ok(view.find({ type: 'IconButton', label: 'Remove Review search ranking change from Favourites' }), 'the stored pin shows')
     assert.deepEqual(host.data().storage.pinned, ['p2'], 'the ended session is dropped')
-    await view.press(pinControl(view, 'Pin Onboarding checklist for new tenants') as never)
+    await view.press(chevron(view, 'Onboarding checklist for new tenants') as never)
+    await view.press(view.find({ type: 'IconButton', label: 'Add Onboarding checklist for new tenants to Favourites' }) as never)
     assert.deepEqual(host.data().storage.pinned, ['p2', 'p1'], 'several pins keep the order pinned')
     await view.press({ type: 'ListItem', text: /^Sessions$/ })
     assert.equal(view.persisted.plugin.sections.sessions, false, 'the closed section is remembered')
     assert.ok(view.find({ text: 'issue-212-onboarding' }), 'pinned details stay open with Sessions closed')
-    const pins = view.findAll({ type: 'Image' }).filter((item) => String(item.props.alt).startsWith('Unpin '))
-    assert.deepEqual(pins.map((item) => item.props.alt), ['Unpin Review search ranking change', 'Unpin Onboarding checklist for new tenants'])
+    const pins = view.findAll({ type: 'IconButton' }).filter((item) => String(item.props.label).startsWith('Remove '))
+    assert.deepEqual(pins.map((item) => item.props.label), ['Remove Review search ranking change from Favourites', 'Remove Onboarding checklist for new tenants from Favourites'])
     // A storage write from another panel goes through Orca's real storage synchronization.
     await storage.set('pinned', ['p3'])
     await view.settled()
-    assert.ok(pinControl(view, 'Unpin Draft post layout'), 'a new remote pin appears')
+    assert.ok(view.find({ type: 'IconButton', label: 'Remove Draft post layout from Favourites' }), 'a new remote pin appears')
     assert.equal(view.find({ text: 'issue-212-onboarding' }), null, 'a remote unpin removes its card')
     assert.ok(requested.includes('p3'), 'the remote pin requests its usage')
     assert.equal(view.find({ type: 'Skeleton', label: 'Loading model' }), null, 'the remote pin finishes loading its usage')
@@ -304,7 +327,7 @@ test('matches the tab Orca shows to a chat or terminal session', () => {
   assert.equal(panel.isSelected(terminal, null), false)
 })
 
-test('shows a chat button for a chat session and a terminal button for a terminal one', async () => {
+test('shows a chat or a terminal session\'s tab from its title', async () => {
   const focused: string[] = []
   const chat = { ...DEMO.sessions[1], key: 'structured-agent-session-claude_abc:leaf-1' }
   const host = mockHost({
@@ -320,13 +343,10 @@ test('shows a chat button for a chat session and a terminal button for a termina
   const view = await mount(panel, { host })
   try {
     await view.settled()
-    const label = `Show ${chat.title} tab`
-    assert.equal(view.find({ type: 'IconButton', label }), null, 'no terminal button for a chat')
-    const image = view.findAll({ type: 'Image' }).find((i) => i.props.alt === label)
-    assert.match(String(image?.props.src), /^assets\/details\/chat-tab-(dark|light)\.png$/)
-    assert.equal(view.find({ type: 'IconButton', label: `Show ${DEMO.sessions[0].title} tab` })?.props.icon, 'terminal')
-    await view.press(pinControl(view, label) as never)
-    assert.deepEqual(focused, [chat.key], 'the chat button shows its tab in Orca')
+    await view.press({ type: 'ListItem', text: new RegExp(chat.title) })
+    await view.press({ type: 'ListItem', text: new RegExp(DEMO.sessions[0].title) })
+    assert.deepEqual(focused, [chat.key, DEMO.sessions[0].key], 'each title shows its tab in Orca')
+    assert.ok(chevron(view, chat.title) && chevron(view, DEMO.sessions[0].title), 'both have a chevron')
   } finally {
     await view.unmount()
   }
@@ -354,9 +374,9 @@ test('groups a project\'s sessions by worktree when it has more than one', async
   try {
     await view.settled()
     const muted = (text: string, size = 'xs') => view.findAll({ type: 'Text', text }).filter((n) => n.props.size === size).map((n) => n.props.muted)
-    assert.deepEqual(muted('Platform', 'sm'), [false], 'the project Orca shows')
-    assert.deepEqual(muted('Personal Blog', 'sm'), [true])
-    assert.deepEqual(muted('main'), [true, false], 'the main of Personal Blog, then the main checkout Orca shows')
+    assert.equal(muted('Platform')[0], false, 'the project Orca shows')
+    assert.equal(muted('Personal Blog')[0], true)
+    assert.deepEqual(muted('main'), [false], 'the main checkout Orca shows')
     assert.deepEqual(muted('issue-212-onboarding'), [true])
     assert.deepEqual(muted('Release notes for 0.4'), [true], 'a file, not the session, is on screen')
     // Paths hold keys, so the order on screen is the order findAll returns.
@@ -365,15 +385,17 @@ test('groups a project\'s sessions by worktree when it has more than one', async
     // From the Platform project, which follows Personal Blog's session.
     const platform = texts.slice(texts.indexOf('Draft post layout'))
     assert.deepEqual(platform.filter((text) => order.includes(text as string)), order,'a header per worktree with sessions, its sessions under it')
-    // Personal Blog has two worktrees with a session in one; the session outside every project has one.
+    // Personal Blog and the session outside every project each have sessions in one worktree.
     const before = (title: string) => texts[texts.indexOf(title) - 1]
-    assert.equal(before('Draft post layout'), 'main', 'a header even when only one worktree has sessions')
+    assert.equal(before('Draft post layout'), 'Personal Blog', 'no header when only one worktree has sessions')
     assert.equal(before('Review search ranking change'), 'mountin-knowledge-base', 'a project with one worktree has no header')
+    // A project's name has no icon.
+    assert.ok(!view.findAll({ type: 'Image' }).some((i) => String(i.props.src).includes('/project-')), 'no project icon')
     // The details show the session's branch with the branch icon, not its worktree's name again.
-    await view.press({ type: 'ListItem', text: /Release notes for 0\.4/ })
+    await view.press(chevron(view, 'Release notes for 0\\.4') as never)
     assert.ok(view.find({ type: 'Text', text: 'release/0.4' }), 'the branch')
     assert.ok(view.find({ type: 'Image', alt: 'Branch' } as never), 'the branch icon')
-    assert.equal(view.findAll({ type: 'Text', text: 'main' }).length, 2, 'the worktree name only in its header')
+    assert.equal(view.findAll({ type: 'Text', text: 'main' }).length, 1, 'the worktree name only in its header')
     assert.equal(view.find({ type: 'Text', text: /^on / }), null)
     assert.deepEqual(view.warnings, [])
     assert.deepEqual(view.refusals, [])
@@ -394,7 +416,7 @@ test('shows why a session could not compact', async () => {
   })
   const view = await mount(panel, { host })
   try {
-    await view.press({ type: 'ListItem', text: /Review search ranking change/ })
+    await view.press(chevron(view, 'Review search ranking change') as never)
     await view.press({ label: 'Compact' })
     assert.ok(view.find({ type: 'Callout', text: 'Could not compact Review search ranking change. The command was not run.' }))
   } finally {
@@ -417,8 +439,8 @@ test('shows skeletons only for what the details are still reading', async () => 
   const labels = () => view.findAll({ type: 'Skeleton' }).map((s) => s.props.label)
   // A press settles only once its reads answer, so they are held open while the view is polled,
   // then answered together.
-  const open = async (title: RegExp, want: string[]) => {
-    const pressing = view.press({ type: 'ListItem', text: title })
+  const open = async (title: string, want: string[]) => {
+    const pressing = view.press(chevron(view, title) as never)
     for (let i = 0; i < 200 && JSON.stringify(labels()) !== JSON.stringify(want); i++) {
       await new Promise((resolve) => setTimeout(resolve, 10))
     }
@@ -431,7 +453,7 @@ test('shows skeletons only for what the details are still reading', async () => 
   try {
     // Model, context and turns wait for the transcript, and #215's title for gh; status, the
     // worktree and #212, which Orca already knows, show at once.
-    let answer = await open(/Onboarding checklist for new tenants/, ['Loading model', 'Loading context', 'Loading turns', 'Loading title'])
+    let answer = await open('Onboarding checklist for new tenants', ['Loading model', 'Loading context', 'Loading turns', 'Loading title'])
     for (const text of ['active', 'issue-212-onboarding', '#212', '#215']) {
       assert.ok(view.find({ text }), `shows ${text} while loading`)
     }
@@ -441,7 +463,7 @@ test('shows skeletons only for what the details are still reading', async () => 
     assert.ok(view.find({ text: /^Opus 5\.5,\s*High$/ }))
     assert.ok(view.find({ text: 'Tenant invite emails' }))
     // A session without pull requests has no title to wait for.
-    answer = await open(/Review search ranking change/, ['Loading model', 'Loading context', 'Loading turns'])
+    answer = await open('Review search ranking change', ['Loading model', 'Loading context', 'Loading turns'])
     await answer()
     assert.deepEqual(labels(), [])
   } finally {
