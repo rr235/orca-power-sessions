@@ -719,6 +719,29 @@ test('shows skeletons only for what the details are still reading', async () => 
   }
 })
 
+test('says why a session has no usage, keeping every usage row', async () => {
+  // p1 is a Claude session whose transcript was not found; p2 runs an agent whose usage is not read.
+  const overview = { ...DEMO, sessions: DEMO.sessions.map((s) => (s.key === 'p2' ? { ...s, agent: 'gemini', agentIcon: null } : s)) }
+  const host = mockHost({
+    requests: { 'overview.load': () => overview, 'session.usage': () => ({}), 'pr.info': () => ({}) },
+    storage: { expanded: { p1: true, p2: true } }
+  })
+  const view = await mount(panel, { host })
+  try {
+    await view.settled()
+    assert.ok(view.find({ type: 'Text', text: 'No transcript found for this session.' }), 'a Claude session without a transcript')
+    assert.ok(view.find({ type: 'Text', text: 'Usage is only read for Claude and Codex sessions.' }), 'another agent')
+    // The context bar shows empty and the tokens and context read NA, one of each per open card.
+    const bars = view.findAll({ type: 'Progress' })
+    assert.deepEqual(bars.map((bar) => bar.props.value), [0, 0])
+    assert.equal(view.findAll({ type: 'Button', text: 'NA' }).length, 2, 'tokens')
+    assert.equal(view.findAll({ text: /^NA\s*\/ NA$/ }).length, 2, 'context')
+    assert.deepEqual(view.errors, [])
+  } finally {
+    await view.unmount()
+  }
+})
+
 test('edits, adds and deletes quick actions', async () => {
   const saved: unknown[] = []
   const deleted: string[] = []

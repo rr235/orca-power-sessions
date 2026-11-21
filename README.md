@@ -71,6 +71,7 @@ A stopped action has an edit button to change or delete it.
 - **Compact runs right away.** It sends `/compact`, or its equivalent in a chat. The button is disabled while the agent is working; it does not queue a compact.
 - **Turn colours.** Turns show in the warning colour above 20 and in red above 35, counted since the last compaction, or from the start before the first one.
 - **Context size.** Capacity comes from the transcript or from Orca. For Claude, it falls back to an estimate for the model.
+- **Missing usage.** Usage is read only from Claude and Codex transcripts. When it is unknown, the details show NA and an empty context bar, and the turns line says why.
 - **Orca internals.** Compacting a chat, showing a tab and reading which tab Orca shows use internal Orca APIs, which can change between releases. Failures show in the panel.
 - **Refresh.** While visible, the panel reloads every 15 seconds. Agent status changes and workspace creation or removal also trigger a reload. The refresh button beside **Sessions** collapses all details, except those in Favourites, and reloads.
 
