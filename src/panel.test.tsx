@@ -309,7 +309,10 @@ test('pins a session above Sessions with its details open, and unpins it', async
   const view = await mount(panel, { host })
   try {
     await view.settled()
-    assert.equal(view.find({ type: 'Text', text: 'Favourites' }), null, 'no Pinned area before a pin')
+    const empty = view.find({ type: 'Text', text: 'Favourites' })
+    const sessionsTitle = view.find({ type: 'Text', text: 'Sessions' })
+    assert.ok(empty && sessionsTitle && empty.path < sessionsTitle.path, 'Favourites shows above Sessions before a pin')
+    assert.ok(view.find({ type: 'Text', text: "Pin session details by clicking on the star button." }), 'with how to add and remove one')
     assert.equal(view.find({ type: 'IconButton', label: 'Add Onboarding checklist for new tenants to Favourites' }), null, 'the row has no pin')
     await view.press(chevron(view, 'Onboarding checklist for new tenants') as never)
     const pin = view.find({ type: 'IconButton', label: 'Add Onboarding checklist for new tenants to Favourites' })
@@ -347,12 +350,84 @@ test('pins a session above Sessions with its details open, and unpins it', async
     await view.press(view.find({ type: 'IconButton', label: 'Remove Onboarding checklist for new tenants from Favourites' }) as never)
     await view.settled()
     assert.deepEqual(host.data().storage.pinned, [])
-    assert.equal(view.find({ type: 'Text', text: 'Favourites' }), null, 'the Pinned area goes with the last pin')
+    assert.ok(view.find({ type: 'Text', text: 'Favourites' }), 'Favourites stays after the last pin')
     assert.equal(view.find({ text: 'issue-212-onboarding' }), null, 'its project row has its details closed')
     await view.press(chevron(view, 'Onboarding checklist for new tenants') as never)
     assert.ok(view.find({ type: 'IconButton', label: 'Add Onboarding checklist for new tenants to Favourites' }), 'and pins again from them')
     assert.deepEqual(view.warnings, [])
     assert.deepEqual(view.errors, [])
+  } finally {
+    await view.unmount()
+  }
+})
+
+test('explains how to add a project while Orca has none', async () => {
+  const host = mockHost({ requests: { 'overview.load': () => ({ ...DEMO, projects: [], sessions: [] }), 'session.usage': () => ({}), 'pr.info': () => ({}) } })
+  const view = await mount(panel, { host })
+  try {
+    await view.settled()
+    const note = view.find({ type: 'Callout', title: 'No Orca projects found' })
+    const sessions = view.find({ type: 'Text', text: 'Sessions' })
+    const actions = view.find({ type: 'Text', text: 'Quick actions' })
+    assert.ok(note && sessions && actions && sessions.path < note.path && note.path < actions.path, 'the note sits inside Sessions')
+    assert.equal(view.find({ type: 'Text', text: 'Favourites' }), null, 'Favourites hides without projects')
+    assert.equal(view.find({ label: 'Refresh sessions' }), null, 'and so does Refresh')
+    assert.ok(view.find({ text: /^1\. Open the workspaces sidebar, click on the add project/ }) && view.find({ text: /^2\. Choose Browse folder/ }) && view.find({ text: /^3\. Start a session/ }), 'with numbered steps')
+    const described = view.findAll({ type: 'Text', text: 'All sessions are grouped by Orca projects.' })
+    assert.equal(described.length, 1, 'the description shows once')
+    assert.ok(note && described[0].path.startsWith(note.path), 'as the note’s first line, not under the header')
+    await view.press({ type: 'ListItem', text: /^Sessions$/ })
+    assert.equal(view.find({ type: 'Callout', title: 'No Orca projects found' }), null, 'closed Sessions hides it')
+    assert.ok(view.find({ type: 'Text', text: 'All sessions are grouped by Orca projects.' }), 'and the description returns under the header')
+    assert.deepEqual(view.errors, [])
+  } finally {
+    await view.unmount()
+  }
+})
+
+test('explains how to add a quick action while none is saved, with examples', async () => {
+  const host = mockHost({ requests: { 'overview.load': () => ({ ...DEMO, servers: [] }), 'session.usage': () => ({}), 'pr.info': () => ({}) } })
+  const view = await mount(panel, { host })
+  try {
+    await view.settled()
+    const note = view.find({ type: 'Callout', title: 'No quick actions yet?' })
+    const header = view.find({ type: 'Text', text: 'Quick actions' })
+    const add = view.find({ label: 'Add action' })
+    assert.ok(note && header && add && header.path < note.path && note.path < add.path, 'the note sits between the header and Add action')
+    assert.equal(note?.props.tone, 'accent')
+    assert.ok(view.find({ type: 'Text', text: 'Click Add action below to add one.' }), 'with how to add one')
+    assert.ok(view.find({ type: 'Text', text: '- Single command:' }) && view.find({ type: 'Text', text: '- Multiple commands:' }), 'and two examples')
+    const code = view.findAll({ type: 'Code' }).filter((c) => note && c.path.startsWith(note.path))
+    assert.deepEqual(code.map((c) => c.text), ['npm run dev', 'git pull', 'npm install', 'npm run build'], 'their commands as inline code')
+    const described = view.findAll({ type: 'Text', text: 'One click run for commands to run within your project folder.' })
+    assert.equal(described.length, 1, 'the description shows once')
+    assert.ok(note && described[0].path.startsWith(note.path), 'as the note’s first line, not under the header')
+    await view.press({ type: 'ListItem', text: /^Quick actions$/ })
+    assert.equal(view.find({ type: 'Callout', title: 'No quick actions yet?' }), null, 'closed Quick actions hides it')
+    assert.ok(view.find({ type: 'Text', text: 'One click run for commands to run within your project folder.' }), 'and the description returns under the header')
+    assert.deepEqual(view.errors, [])
+  } finally {
+    await view.unmount()
+  }
+})
+
+test('shows no quick action note while actions are saved', async () => {
+  const host = mockHost({ requests: { 'overview.load': () => DEMO, 'session.usage': () => ({}), 'pr.info': () => ({}) } })
+  const view = await mount(panel, { host })
+  try {
+    await view.settled()
+    assert.equal(view.find({ type: 'Callout', title: 'No quick actions yet?' }), null)
+  } finally {
+    await view.unmount()
+  }
+})
+
+test('shows no project note while Orca has projects', async () => {
+  const host = mockHost({ requests: { 'overview.load': () => DEMO, 'session.usage': () => ({}), 'pr.info': () => ({}) } })
+  const view = await mount(panel, { host })
+  try {
+    await view.settled()
+    assert.equal(view.find({ type: 'Callout', title: 'No Orca projects found' }), null)
   } finally {
     await view.unmount()
   }
@@ -384,6 +459,12 @@ test('syncs ordered pins across panels, including while Sessions is closed', asy
     assert.ok(view.find({ text: 'issue-212-onboarding' }), 'pinned details stay open with Sessions closed')
     const pins = view.findAll({ type: 'IconButton' }).filter((item) => String(item.props.label).startsWith('Remove '))
     assert.deepEqual(pins.map((item) => item.props.label), ['Remove Review search ranking change from Favourites', 'Remove Onboarding checklist for new tenants from Favourites'])
+    await view.press({ type: 'ListItem', text: /^Favourites$/ })
+    assert.equal(view.persisted.plugin.sections.favourites, false, 'closed Favourites is remembered')
+    assert.equal(view.find({ text: 'issue-212-onboarding' }), null, 'closed Favourites hides its cards')
+    assert.ok(view.find({ type: 'Text', text: 'Favourites' }), 'and keeps its header')
+    await view.press({ type: 'ListItem', text: /^Favourites$/ })
+    assert.ok(view.find({ text: 'issue-212-onboarding' }), 'reopening shows them again')
     // A storage write from another panel goes through Orca's real storage synchronization.
     await storage.set('pinned', ['p3'])
     await view.settled()

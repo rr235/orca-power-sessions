@@ -42,7 +42,7 @@ Review the access request, then run the approval command Orca prints.
 2. Click a session to show its terminal or chat. Press the chevron beside it to expand or collapse its details. Click a project to open its main checkout. When it has no open tabs, your default agent starts there, as a chat or a terminal per your Orca settings.
 3. Press **Compact** in the details to compact the conversation.
 4. Press the star before the time in a session's details to keep them open under **Favourites**, above the list. The star turns red; press it again to remove the session.
-5. Click **Sessions** or **Quick actions** to collapse or expand that section.
+5. Click **Favourites**, **Sessions** or **Quick actions** to collapse or expand that section.
 
 Apart from that first agent in an empty checkout, Power Sessions does not create sessions or worktrees. Open them in Orca as usual.
 
