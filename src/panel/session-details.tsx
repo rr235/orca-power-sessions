@@ -135,40 +135,61 @@ export function ModelFact({ session, stats }: { session: Session; stats: Session
           ) : null}
         </Text>
       </Box>
-      {stats?.tokens != null ? (
-        <Box shrink={false}>
-          {/* A ghost button only for its tooltip: Orca's Text has no tooltip. */}
+      <Box shrink={false}>
+        {/* A ghost button only for its tooltip: Orca's Text has no tooltip. Without a count it reads
+            NA in the same button, so the row keeps its height. */}
+        {stats?.tokens != null ? (
           <Button variant="ghost" size="xs" tooltip={tokensStatement(stats.tokens, stats.tokenSplit)}>
             {tokenLabel(stats.tokens)}
           </Button>
-        </Box>
-      ) : null}
+        ) : (
+          <Button variant="ghost" size="xs" tooltip="No token count for this session">
+            {UNKNOWN}
+          </Button>
+        )}
+      </Box>
     </Box>
   )
 }
 
-/** How full the context window was at the last turn: a bar, then `121k / 1M`. */
-export function ContextFact({ used, window }: { used: number; window: number | null }) {
-  const label = contextLabel(used, window)
+/** What a usage value reads when the session has none. */
+export const UNKNOWN = 'NA'
+
+/**
+ * How full the context window was at the last turn: a bar, then `121k / 1M`. An unknown value reads
+ * NA and an unknown percent shows an empty bar, so the row always has the same shape.
+ */
+export function ContextFact({ used, window }: { used: number | null; window: number | null }) {
+  const label = used != null ? contextLabel(used, window) : { used: UNKNOWN, window: window ? tokenLabel(window) : null, percent: null }
   return (
     <Box direction="row" align="center" gap="xs" minWidth={0}>
-      {label.percent != null ? (
-        <Box grow minWidth={0}>
-          <Progress label="Context used" labelHidden value={label.percent} />
-        </Box>
-      ) : null}
+      <Box grow minWidth={0}>
+        <Progress label="Context used" labelHidden value={label.percent ?? 0} />
+      </Box>
       <Box shrink={false}>
-        <Text size="xs">
+        <Text size="xs" muted={used == null}>
           {label.used}
-          {label.window ? (
-            <Text size="xs" muted>
-              {` / ${label.window}`}
-            </Text>
-          ) : null}
+          <Text size="xs" muted>
+            {` / ${label.window ?? UNKNOWN}`}
+          </Text>
         </Text>
       </Box>
     </Box>
   )
+}
+
+/**
+ * Why a session has no turns to show, in their place: only Claude and Codex transcripts are read,
+ * one may not be found, and the read itself may fail. Null when the turns are known.
+ */
+function usageGap(session: Session, stats: SessionUsage | undefined, readFailed: boolean): string | null {
+  if (!session.agent || !AGENT_LABEL[session.agent]) {
+    return 'Usage is only read for Claude and Codex sessions.'
+  }
+  if (stats?.turns != null) {
+    return null
+  }
+  return readFailed ? 'Could not read usage. The next refresh tries again.' : 'No transcript found for this session.'
 }
 
 /** `12 turns, 1 compaction, 0 tool calls`: a count with its noun, singular for one. */
@@ -189,35 +210,45 @@ export function turnsTone(turns: number): 'warning' | 'danger' | undefined {
  * context has been compacted, then the totals in the same shape, `40 turns, 186 tool calls, 3
  * compactions`, all muted. Before the first compaction the total turns take the colour instead.
  */
-export function TurnsFact({ stats }: { stats: SessionUsage }) {
-  const turns = countLabel(stats.turns ?? 0, 'turn')
-  const compactions = stats.compactions
+export function TurnsFact({ session, stats, readFailed }: { session: Session; stats: SessionUsage | undefined; readFailed: boolean }) {
+  const gap = usageGap(session, stats, readFailed)
+  const turns = countLabel(stats?.turns ?? 0, 'turn')
+  const compactions = stats?.compactions
   const rest = [
-    stats.toolCalls != null ? countLabel(stats.toolCalls, 'tool call') : null,
+    stats?.toolCalls != null ? countLabel(stats.toolCalls, 'tool call') : null,
     compactions != null ? countLabel(compactions, 'compaction') : null
   ].filter((part) => part !== null)
-  return (
-    <Box gap="xs" minWidth={0}>
-      {compactions && stats.turnsSinceCompaction != null ? (
-        <Text size="xs" truncate>
-          <Text size="xs" tone={turnsTone(stats.turnsSinceCompaction)}>
-            {`${countLabel(stats.turnsSinceCompaction, 'turn')}${stats.toolCallsSinceCompaction != null ? ', ' : ' '}`}
-          </Text>
-          <Text size="xs" muted>
-            {`${stats.toolCallsSinceCompaction != null ? `${countLabel(stats.toolCallsSinceCompaction, 'tool call')} ` : ''}since the last compaction`}
-          </Text>
+  const total = (
+    <Text size="xs" truncate>
+      <Text size="xs" muted={Boolean(compactions)} tone={compactions ? undefined : turnsTone(stats?.turns ?? 0)}>
+        {rest.length ? `${turns}, ` : turns}
+      </Text>
+      {rest.length ? (
+        <Text size="xs" muted>
+          {rest.join(', ')}
         </Text>
       ) : null}
-      <Text size="xs" truncate>
-        <Text size="xs" muted={Boolean(compactions)} tone={compactions ? undefined : turnsTone(stats.turns ?? 0)}>
-          {rest.length ? `${turns}, ` : turns}
-        </Text>
-        {rest.length ? (
-          <Text size="xs" muted>
-            {rest.join(', ')}
-          </Text>
-        ) : null}
+    </Text>
+  )
+  const since = !gap && compactions && stats?.turnsSinceCompaction != null ? (
+    <Text size="xs" truncate>
+      <Text size="xs" tone={turnsTone(stats.turnsSinceCompaction)}>
+        {`${countLabel(stats.turnsSinceCompaction, 'turn')}${stats.toolCallsSinceCompaction != null ? ', ' : ' '}`}
       </Text>
+      <Text size="xs" muted>
+        {`${stats.toolCallsSinceCompaction != null ? `${countLabel(stats.toolCallsSinceCompaction, 'tool call')} ` : ''}since the last compaction`}
+      </Text>
+    </Text>
+  ) : null
+  return (
+    <Box gap="xs" minWidth={0}>
+      {gap ? (
+        <Text size="xs" muted truncate>
+          {gap}
+        </Text>
+      ) : since ?? total}
+      {/* A nonbreaking space reserves the second line using the same themed text height. */}
+      {since ? total : <Text size="xs">{'\u00a0'}</Text>}
     </Box>
   )
 }
@@ -226,6 +257,8 @@ type SessionDetailsProps = {
   session: Session
   stats: SessionUsage | undefined
   loading: boolean
+  /** The last usage read failed, rather than finding no transcript. */
+  readFailed: boolean
   info: Record<string, PullRequestInfo>
   titleLoading: Record<string, boolean>
   compacting: boolean
@@ -307,7 +340,7 @@ function StatusFact({ session, compacting, onCompact, favourite }: Pick<SessionD
 }
 
 /** What Orca and the agent's transcript say about a session, under its row while open. */
-export function SessionDetails({ session, stats, loading, info, titleLoading, compacting, onCompact, favourite }: SessionDetailsProps) {
+export function SessionDetails({ session, stats, loading, readFailed, info, titleLoading, compacting, onCompact, favourite }: SessionDetailsProps) {
   // Only a Claude or Codex transcript has numbers to wait for, and only the first read shows
   // skeletons: a refresh keeps the numbers already shown.
   const pending = !stats && loading && Boolean(session.agent && AGENT_LABEL[session.agent])
@@ -322,10 +355,12 @@ export function SessionDetails({ session, stats, loading, info, titleLoading, co
           <Skeleton lines={1} label="Loading turns" />
         </Box>
       ) : (
+        // The model, context and turns rows always show, with NA or a note in place of what is
+        // unknown, so the card keeps its shape.
         <Box gap="xs">
           <ModelFact session={session} stats={stats} />
-          {stats?.context != null ? <ContextFact used={stats.context} window={stats.contextWindow} /> : null}
-          {stats?.turns ? <TurnsFact stats={stats} /> : null}
+          <ContextFact used={stats?.context ?? null} window={stats?.contextWindow ?? null} />
+          <TurnsFact session={session} stats={stats} readFailed={readFailed} />
         </Box>
       )}
       {/* The branch, with its pull requests below it, set off from the usage by a rule; a long

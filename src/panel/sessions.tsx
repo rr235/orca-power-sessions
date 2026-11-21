@@ -18,6 +18,7 @@ import {
   toggleDetails,
   unpinSession,
   usage,
+  usageFailed,
   usageLoading
 } from './state'
 
@@ -77,6 +78,7 @@ export function SessionRow({ session, inPinnedArea = false }: { session: Session
               session={session}
               stats={read(usage)[session.key]}
               loading={Boolean(read(usageLoading)[session.key])}
+              readFailed={Boolean(read(usageFailed)[session.key])}
               info={read(prInfo)}
               titleLoading={read(prLoading)}
               compacting={Boolean(read(busy)[`compact:${session.key}`])}

@@ -71,6 +71,7 @@ A stopped action has an edit button to change or delete it.
 - **Compact runs right away.** It sends `/compact` to the session's terminal. The button is disabled while the agent is working; it does not queue a compact. Chats have no Compact button, since Orca offers plugins no way to compact one.
 - **Turn colours.** Turns show in the warning colour above 20 and in red above 35, counted since the last compaction, or from the start before the first one.
 - **Context size.** Codex records its window. For Claude it is worked out as Claude Code does: the model's window, capped by an auto-compact window set in Claude Code's settings, `--autocompact` or `CLAUDE_CODE_AUTO_COMPACT_WINDOW`.
+- **Missing usage.** Usage is read only from Claude and Codex transcripts. When it is unknown, the details show NA and an empty context bar, and the turns line says why.
 - **Chats.** Orca names the workspace on screen but not its tab, so a chat opens its workspace, and the session you last opened from the panel stays marked while its workspace is on screen.
 - **Refresh.** While visible, the panel reloads every 15 seconds. Agent status changes and workspace creation or removal also trigger a reload. The refresh button beside **Sessions** collapses all details, except those in Favourites, and reloads.
 
