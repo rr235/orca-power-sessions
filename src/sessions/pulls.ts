@@ -1,7 +1,7 @@
 // Pull request titles and states for the session details. Orca records them for the pull request
 // it tracks, not for the others linked to a workspace, so `gh` reads those.
-import { run } from './cli'
-import type { PullRequestInfo } from './protocol'
+import { run } from '../cli'
+import type { PullRequestInfo } from '../protocol'
 
 // An open pull request is read again after this long, so a merge shows up; a merged or closed one
 // is kept for the worker's lifetime.

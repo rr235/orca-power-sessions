@@ -4,7 +4,7 @@ import { storage } from 'orca'
 import { mock } from 'node:test'
 import { DEMO, DEMO_USAGE, DEMO_WORKTREES } from './fixtures'
 import * as panel from './panel'
-import { saveAction, storedActions } from './servers'
+import { saveAction, storedActions } from './actions/rules'
 
 /** The pressable row holding the image named `alt`: an image's alt is not a label. */
 function pinControl(view: Awaited<ReturnType<typeof mount>>, alt: string) {

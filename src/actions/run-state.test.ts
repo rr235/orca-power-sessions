@@ -1,7 +1,7 @@
 // The ownership policy uses observed values directly, without recreating the process probe.
 import { assert, test } from 'orca/testing'
-import { actionTerminals, commandRunning, runState, runStates, startStep, terminalTitle } from './servers'
-import type { RunObservation } from './servers'
+import { actionTerminals, commandRunning, runState, runStates, startStep, terminalTitle } from './rules'
+import type { RunObservation } from './rules'
 
 const KB = { id: 'kb', name: 'Knowledge Base', path: '/c/kb', url: 'http://localhost:3410' }
 const KNOWN = { kb: 'term_kb' }

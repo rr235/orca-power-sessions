@@ -29,7 +29,7 @@ export function terminalOfProcess(terminalsJson: string, paneKey: string | null,
   return found && !agents.has(`${found.tabId}:${found.leafId}`) ? (found.handle ?? null) : null
 }
 
-/** A process as `processTerminal` in servers.ts reads it. */
+/** A process as `processTerminal` in src/actions/rules.ts reads it. */
 type ProcessInfo = { ppid: number | null; detached: boolean; paneKey: string | null; handle: string | null }
 
 // How far up from a server's process to look for the terminal it runs in.

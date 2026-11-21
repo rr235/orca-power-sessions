@@ -5,10 +5,10 @@
 import { open, readdir, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { chatRecords, contextReports, hookStatus, sessionStore } from './orca/stores'
-import type { ChatRecord, ContextReport, Source } from './orca/stores'
-import type { SessionUsage, TokenSplit } from './protocol'
-import { chatSessionId } from './shared'
+import { chatRecords, contextReports, hookStatus, sessionStore } from '../orca/stores'
+import type { ChatRecord, ContextReport, Source } from '../orca/stores'
+import type { SessionUsage, TokenSplit } from '../protocol'
+import { chatSessionId } from '../shared'
 
 /** Claude names a project's transcript folder after its working directory. */
 const claudeFolder = (cwd: string) => cwd.replace(/[^A-Za-z0-9]/g, '-')
