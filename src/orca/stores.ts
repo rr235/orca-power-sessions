@@ -81,10 +81,11 @@ function parse<T>(line: string): T | null {
 }
 
 export async function chatRecords(ids: string[], store: SessionStore): Promise<Map<string, ChatRecord>> {
-  if (!ids.length) {
+  const safe = [...new Set(ids)].filter((id) => SAFE_ID.test(id))
+  if (!safe.length) {
     return new Map()
   }
-  const list = ids.map((id) => `'${id}'`).join(',')
+  const list = safe.map((id) => `'${id}'`).join(',')
   const out = await run('sqlite3', [
     '-readonly',
     '-json',

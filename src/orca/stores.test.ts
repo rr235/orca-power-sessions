@@ -3,7 +3,23 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { assert, test } from 'orca/testing'
 import { run } from '../cli'
-import { contextReports, hookStatus, parseHookStatus, sessionStore } from './stores'
+import { chatRecords, contextReports, hookStatus, parseHookStatus, sessionStore } from './stores'
+
+test('reads only the requested chat records, rejecting unsafe session ids', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'quick-actions-'))
+  const store = join(dir, 'domain.db')
+  try {
+    await run('sqlite3', [
+      store,
+      `create table agent_session_records (session_id, record_json);
+       insert into agent_session_records values ('a', '{"provider":"claude"}'), ('b', '{"provider":"codex"}');`
+    ])
+    const records = await chatRecords(['a', 'a', "x') or 1=1 --"], { path: store, layout: 'domain' })
+    assert.deepEqual(Object.fromEntries(records), { a: { provider: 'claude' } })
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
 
 test("reads each chat session's context from Orca's last report", async () => {
   const dir = await mkdtemp(join(tmpdir(), 'quick-actions-'))
