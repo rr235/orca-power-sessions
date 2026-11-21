@@ -30,6 +30,7 @@ import type { Overview, Project, QuickActionInput, PullRequestInfo, Selected, Se
 import { runCommand } from './servers'
 import { normalUrl } from './url'
 import { Icon, SessionDetails } from './session-details'
+import { startingActions, watchQuickActions } from './quick-action-polling'
 
 const REFRESH_MS = 15000
 const EVENT_DELAY_MS = 400
@@ -162,30 +163,31 @@ function loadSoon(): void {
 }
 
 /** Runs a worker action with `key` marked busy, then refreshes. */
-async function act(key: string, action: () => Promise<unknown>, failure: string | ((error: unknown) => string)): Promise<void> {
+async function act(key: string, action: () => Promise<unknown>, failure: string | ((error: unknown) => string)): Promise<boolean> {
   if (read(busy)[key]) {
-    return
+    return false
   }
+  let succeeded = false
   update(busy, (b) => ({ ...b, [key]: true }))
   set(actionError, null)
   try {
     await action()
+    succeeded = true
   } catch (error) {
     set(actionError, typeof failure === 'string' ? failure : failure(error))
   } finally {
     update(busy, ({ [key]: _, ...rest }) => rest)
   }
   await load()
+  return succeeded
 }
 
-// After a start, look again while the server boots, so it turns green without waiting a full cycle.
-const BOOT_CHECKS_MS = [3000, 8000]
+let actionPolling: ReturnType<typeof watchQuickActions>
 
 async function startServer(server: Server): Promise<void> {
-  await act(`server:${server.id}`, () => plugin.request('server.start', { id: server.id }, { timeoutMs: 40000 }), `Could not start ${server.name}.`)
-  for (const delay of BOOT_CHECKS_MS) {
-    setTimeout(() => void load(), delay)
-  }
+  await actionPolling.start(server.id, () =>
+    act(`server:${server.id}`, () => plugin.request('server.start', { id: server.id }, { timeoutMs: 40000 }), `Could not start ${server.name}.`)
+  )
 }
 // Both open in the default browser; Orca allows it only from the press itself.
 const openServer = (server: Server) => void shell.openExternal(server.url as string)
@@ -310,6 +312,8 @@ function refresh(): void {
 }
 
 export function setup(ctx: PanelContext): () => void {
+  const polling = watchQuickActions(ctx, load, () => read(overview)?.servers ?? [])
+  actionPolling = polling
   ctx.subscriptions.push(
     on('agent.status.changed', loadSoon),
     on('workspace.created', loadSoon),
@@ -341,6 +345,7 @@ export function setup(ctx: PanelContext): () => void {
   return () => {
     clearInterval(timer)
     clearInterval(selectedTimer)
+    polling.dispose()
     // A press's hold is this panel run's; the next run reads Orca afresh.
     selectedHeldUntil = 0
     ++loadSeq
@@ -356,7 +361,10 @@ function ServerCard({ server }: { server: Server }) {
   const ours = Boolean(server.terminal)
   const editingThis = read(editing) === server.id
   // Run and Stop share the first slot; a server with no Orca terminal to close, such as one under pm2 or an agent, has nothing to stop.
-  const control = !server.up ? (
+  // Between Run and the server showing as running, Stop shows disabled.
+  const control = !server.up && read(startingActions)[server.id] ? (
+    <IconButton icon="stop" label={`Stop ${server.name}`} tooltip="Starting" size="xs" variant="ghost" disabled onPress={() => undefined} />
+  ) : !server.up ? (
     <IconButton
       icon="play"
       label={`Run ${server.name}`}
