@@ -1,5 +1,5 @@
 import { assert, test } from 'orca/testing'
-import { flattened, replySnippet, Tally } from './usage'
+import { Tally } from './usage'
 
 test('takes the context Claude records after a compaction, else forgets it until the next reply', () => {
   const tally = new Tally()
@@ -143,13 +143,4 @@ test('reads Codex model, effort and total tokens from its rollout', () => {
   )
   assert.deepEqual(tally.tokenSplit, { input: 912_046, cached: 11_234_688, output: 83_691 })
   assert.equal(tally.tokens, 12_230_425)
-})
-
-test('finds a reply as Orca shows it in the transcript line that holds it', () => {
-  // Orca shows a reply on one line; the transcript holds its line breaks as JSON escapes.
-  const line = JSON.stringify({ message: { content: 'Done.\n\nThe tests pass and the "filter" labels sit on one row.' } })
-  const snippet = replySnippet('Done. The tests pass and the "filter" labels sit on one row.')
-  assert.equal(snippet, 'Done. The tests pass and the ')
-  assert.ok(flattened(line).includes(snippet as string))
-  assert.equal(replySnippet('Done.'), null)
 })

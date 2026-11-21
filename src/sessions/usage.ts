@@ -33,35 +33,34 @@ async function claudeTranscript(sessionId: string, cwd: string): Promise<string 
   return null
 }
 
-// How many days back from today to look for a Codex rollout: Codex files it under the day it started.
-const CODEX_DAYS = 60
-
-/** A Codex thread's rollout file, in the folder of the local day the thread started. */
-async function codexTranscript(thread: string, now = Date.now()): Promise<string | null> {
-  const root = join(homedir(), '.codex', 'sessions')
-  const day = 24 * 60 * 60 * 1000
-  for (let back = -1; back <= CODEX_DAYS; back++) {
-    const date = new Date(now - back * day)
-    const folder = join(root, String(date.getFullYear()), String(date.getMonth() + 1).padStart(2, '0'), String(date.getDate()).padStart(2, '0'))
-    const name = (await readdir(folder).catch(() => [] as string[])).find((file) => file.endsWith(`-${thread}.jsonl`))
-    if (name) {
-      return join(folder, name)
-    }
-  }
-  return null
+/** A Codex thread's rollout file, including older threads resumed today. */
+export async function codexTranscript(root: string, thread: string): Promise<string | null> {
+  const names = await readdir(root, { recursive: true }).catch(() => [] as string[])
+  const name = names.find((file) => file.endsWith(`-${thread}.jsonl`))
+  return name ? join(root, name) : null
 }
 
-/** Text with JSON's escaped line breaks and tabs, and every run of white space, as one space. */
-export const flattened = (text: string) => text.replace(/\\[nrt]/g, ' ').replace(/\s+/g, ' ')
+const normalized = (text: string) => text.replace(/\s+/g, ' ').trim()
 
-/** A run of a reply that its flattened transcript line holds as written: no quote or backslash, which JSON escapes. */
-export function replySnippet(reply: string): string | null {
-  return /[^"\\]{24,80}/.exec(flattened(reply).trim())?.[0] ?? null
+/** Match a reply prefix against decoded main-thread assistant text, never a quote in another row. */
+function hasReply(text: string, reply: string): boolean {
+  return text.split('\n').some((line) => {
+    const row = parse<Row>(line)
+    if (row?.type !== 'assistant' || row.isSidechain) {
+      return false
+    }
+    const content = row.message?.content
+    const blocks = Array.isArray(content) ? (content as { type?: string; text?: string }[]) : []
+    const actual = typeof content === 'string' ? content : blocks.filter((block) => block.type === 'text').map((block) => block.text ?? '').join('\n')
+    return normalized(actual).startsWith(reply)
+  })
 }
 
 // How many of a checkout's newest transcripts, and how much of each one's end, to search for a reply.
 const REPLY_FILES = 15
 const REPLY_TAIL_BYTES = 512 * 1024
+// Orca shortens replies and removes embedded artifact markup; keep a prefix as before.
+const REPLY_PREFIX_CHARS = 80
 
 async function tailOf(path: string, size: number): Promise<string> {
   const file = await open(path, 'r')
@@ -76,27 +75,30 @@ async function tailOf(path: string, size: number): Promise<string> {
 }
 
 /**
- * A Claude transcript in the checkout's folder whose end holds the agent's last reply, the newest
- * first: for a pane Orca gives no session id.
+ * The only recent Claude transcript in the checkout's folder whose end holds the agent's last
+ * reply prefix: for a pane Orca gives no session id. A quote or an ambiguous reply proves no ownership.
  */
-async function claudeTranscriptByReply(cwd: string, reply: string): Promise<string | null> {
-  const snippet = replySnippet(reply)
-  if (!snippet) {
+export async function claudeTranscriptByReply(folder: string, reply: string): Promise<string | null> {
+  const expected = normalized(reply).slice(0, REPLY_PREFIX_CHARS)
+  if (expected.length < 24) {
     return null
   }
-  const folder = join(homedir(), '.claude', 'projects', claudeFolder(cwd))
   const names = (await readdir(folder).catch(() => [] as string[])).filter((name) => name.endsWith('.jsonl'))
   const found = await Promise.all(names.map(async (name) => ({ path: join(folder, name), info: await stat(join(folder, name)).catch(() => null) })))
   const files = found
     .flatMap((file) => (file.info ? [{ path: file.path, size: file.info.size, at: file.info.mtimeMs }] : []))
     .sort((x, y) => y.at - x.at)
     .slice(0, REPLY_FILES)
+  let matched: string | null = null
   for (const file of files) {
-    if (flattened(await tailOf(file.path, file.size).catch(() => '')).includes(snippet)) {
-      return file.path
+    if (hasReply(await tailOf(file.path, file.size).catch(() => ''), expected)) {
+      if (matched) {
+        return null
+      }
+      matched = file.path
     }
   }
-  return null
+  return matched
 }
 
 /** Transcripts found, by agent and session id, or by pane and reply for a pane without an id. */
@@ -111,10 +113,10 @@ async function transcriptOf(key: string, session: AgentSession): Promise<{ path:
       path = session.sessionId
         ? await claudeTranscript(session.sessionId, session.path)
         : session.reply
-          ? await claudeTranscriptByReply(session.path, session.reply)
+          ? await claudeTranscriptByReply(join(homedir(), '.claude', 'projects', claudeFolder(session.path)), session.reply)
           : null
     } else if (session.agent === 'codex' && session.sessionId) {
-      path = await codexTranscript(session.sessionId)
+      path = await codexTranscript(join(homedir(), '.codex', 'sessions'), session.sessionId)
     }
     if (path) {
       transcripts.set(id, path)

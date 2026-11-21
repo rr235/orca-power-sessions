@@ -27,9 +27,12 @@ export function matchSessions(psJson: string, hostAgents: ReadonlyMap<string, re
       if (!pane.paneKey || !pane.agentType || (keys && !keys.has(pane.paneKey))) {
         continue
       }
-      const same = hosted.filter((a) => a.agent === pane.agentType && a.sessionId)
-      const alone = same.length === 1 && (row.agents ?? []).filter((p) => p.agentType === pane.agentType).length === 1
-      const found = same.find((a) => a.stateStartedAt === pane.stateStartedAt) ?? (alone ? same[0] : undefined)
+      const same = hosted.filter((a) => a.agent === pane.agentType)
+      const panes = (row.agents ?? []).filter((p) => p.agentType === pane.agentType)
+      const timed = same.filter((a) => a.stateStartedAt === pane.stateStartedAt)
+      const unique = timed.length === 1 && panes.filter((p) => p.stateStartedAt === pane.stateStartedAt).length === 1
+      const alone = same.length === 1 && panes.length === 1
+      const found = unique ? timed[0] : alone ? same[0] : undefined
       if (row.path) {
         sessions.set(pane.paneKey, { agent: pane.agentType, sessionId: found?.sessionId ?? null, path: row.path, reply: pane.lastAssistantMessage?.trim() || null })
       }
