@@ -4,7 +4,7 @@ import { Box, Callout, Code, Stack, Text } from 'orca'
 // How far an xs icon button's glyph sits inside its 24px control slot, in pixels.
 export const ICON_INSET_PX = 7
 
-// What Sessions and Quick actions are for: under their headers, or first in their note while it shows.
+// What Sessions and Quick actions are for: the first line of their note while it shows.
 export const SESSIONS_DESCRIPTION = 'All sessions are grouped by Orca projects.'
 export const ACTIONS_DESCRIPTION = 'One click run for commands to run within your project folder.'
 

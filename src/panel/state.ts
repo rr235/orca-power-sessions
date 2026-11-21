@@ -15,6 +15,12 @@ const SELECTED_HOLD_MS = 3000
 export const overview = atom<Overview | null>('overview', null, { persist: 'plugin', version: 8, migrate: () => null })
 // Which sections are open, kept across panel runs.
 export const sections = atom<{ favourites?: boolean; sessions?: boolean; actions: boolean }>('sections', { favourites: true, sessions: true, actions: true }, { persist: 'plugin' })
+// Whether Sessions lists only the projects that have a session, kept across panel runs.
+export const projectsWithSessionsOnly = atom<boolean>('projectsWithSessionsOnly', false, { persist: 'plugin' })
+// Projects just shown again by the activity button, by project id; cleared after REVEAL_MS.
+export const REVEAL_MS = 100
+export const revealed = atom<string[]>([])
+let revealTimer: ReturnType<typeof setTimeout> | null = null
 // Sessions whose details are open, by session key. Orca runs a panel per workspace, and showing a
 // session can switch workspace, so each change goes to the plugin's storage at once and every panel
 // takes the others' changes from there.
@@ -141,6 +147,11 @@ export function endPanelRun(): void {
   if (eventTimer) {
     clearTimeout(eventTimer)
   }
+  if (revealTimer) {
+    clearTimeout(revealTimer)
+    revealTimer = null
+  }
+  set(revealed, [])
 }
 
 /** Runs a worker action with `key` marked busy, then refreshes. */
@@ -284,3 +295,25 @@ export const toggleActions = () => update(sections, (s) => ({ ...s, actions: !s.
 export const toggleSessions = () => update(sections, (s) => ({ ...s, sessions: s.sessions === false }))
 // Favourites stored before it could close have no flag, and stay open.
 export const toggleFavourites = () => update(sections, (s) => ({ ...s, favourites: s.favourites === false }))
+
+/**
+ * Shows only the projects with a session, or all of them again. Showing all again marks each project
+ * that comes back with a grey dot and its name in normal text for REVEAL_MS, so the eye finds what changed.
+ */
+export function toggleProjectsWithSessionsOnly(): void {
+  const wasOn = read(projectsWithSessionsOnly)
+  update(projectsWithSessionsOnly, (on) => !on)
+  const data = read(overview)
+  if (!wasOn || !data) {
+    return
+  }
+  // The projects the filter hid: no session belongs to them.
+  set(revealed, data.projects.filter((p) => !data.sessions.some((s) => s.projectId === p.id)).map((p) => p.id))
+  if (revealTimer) {
+    clearTimeout(revealTimer)
+  }
+  revealTimer = setTimeout(() => {
+    revealTimer = null
+    set(revealed, [])
+  }, REVEAL_MS)
+}
