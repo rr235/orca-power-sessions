@@ -1,7 +1,8 @@
 // The panel's state: what it last read from the worker, what is open, pinned and busy, and the
 // reads that keep it current. One copy per panel, so every component reads the same atoms.
-import { atom, plugin, read, set, storage, update } from 'orca'
-import type { Overview, PullRequestInfo, Selected, SessionUsage } from '../protocol'
+import { atom, plugin, read, set, storage, update, type PanelContext } from 'orca'
+import type { ActionStatus, Overview, PullRequestInfo, Selected, SessionUsage } from '../protocol'
+import { watchQuickActions } from './quick-action-polling'
 
 export const REFRESH_MS = 15000
 const EVENT_DELAY_MS = 400
@@ -160,6 +161,20 @@ export async function act(key: string, action: () => Promise<unknown>, failure: 
   }
   await load()
   return succeeded
+}
+
+let actionPolling: ReturnType<typeof watchQuickActions>
+
+/** Watches the quick actions for this panel run; dispose it when the run ends. */
+export function watchActions(ctx: PanelContext): ReturnType<typeof watchQuickActions> {
+  actionPolling = watchQuickActions(ctx, load, () => read(overview)?.servers ?? [])
+  return actionPolling
+}
+
+export async function startAction(action: ActionStatus): Promise<void> {
+  await actionPolling.start(action.id, () =>
+    act(`run:${action.id}`, () => plugin.request('server.start', { id: action.id }, { timeoutMs: 40000 }), `Could not start ${action.name}.`)
+  )
 }
 
 export async function loadSelected(): Promise<void> {

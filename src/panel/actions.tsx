@@ -1,26 +1,13 @@
 // Quick actions in the panel: a card per action with Run, Stop, Show and Open, and the form that
 // adds or edits one, with a row per step.
-import { Box, Button, IconButton, Input, plugin, read, Select, set, shell, Text, Textarea, update, type PanelContext } from 'orca'
+import { Box, Button, IconButton, Input, plugin, read, Select, set, shell, Text, Textarea, update } from 'orca'
 import type { ActionStatus, Project, QuickActionInput } from '../protocol'
 import { normalUrl, runCommand } from '../shared'
-import { startingActions, watchQuickActions } from './quick-action-polling'
+import { startingActions } from './quick-action-polling'
 import { DOT_PX } from './sessions'
-import { act, actionError, busy, closeForm, draft, editing, formError, load, NEW_ACTION, overview } from './state'
+import { act, actionError, busy, closeForm, draft, editing, formError, NEW_ACTION, startAction } from './state'
 import type { Draft } from './state'
 
-let actionPolling: ReturnType<typeof watchQuickActions>
-
-/** Watches the quick actions for this panel run; dispose it when the run ends. */
-export function watchActions(ctx: PanelContext): ReturnType<typeof watchQuickActions> {
-  actionPolling = watchQuickActions(ctx, load, () => read(overview)?.servers ?? [])
-  return actionPolling
-}
-
-async function startAction(action: ActionStatus): Promise<void> {
-  await actionPolling.start(action.id, () =>
-    act(`run:${action.id}`, () => plugin.request('server.start', { id: action.id }, { timeoutMs: 40000 }), `Could not start ${action.name}.`)
-  )
-}
 // Both open in the default browser; Orca allows it only from the press itself.
 const openAction = (action: ActionStatus) => void shell.openExternal(action.url as string)
 const stopAction = (action: ActionStatus) =>

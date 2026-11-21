@@ -2,7 +2,7 @@
 // sessions under it. No build step: Orca strips the types and compiles the JSX when it loads. Its
 // state is in panel/state.ts, the session and quick action components beside it in panel/.
 import { Box, Callout, IconButton, List, ListItem, on, read, Separator, Skeleton, Stack, storage, Text, type PanelContext } from 'orca'
-import { ActionCard, ActionForm, editAction, LabelledButton, watchActions } from './panel/actions'
+import { ActionCard, ActionForm, editAction, LabelledButton } from './panel/actions'
 import { ACTIONS_DESCRIPTION, ICON_INSET_PX, NoActionsNote, NoProjectsNote, SectionDescription, SESSIONS_DESCRIPTION } from './panel/section-notes'
 import { groups, ProjectGroup, SessionRow } from './panel/sessions'
 import {
@@ -27,7 +27,8 @@ import {
   SELECTED_MS,
   toggleActions,
   toggleFavourites,
-  toggleSessions
+  toggleSessions,
+  watchActions
 } from './panel/state'
 
 export function setup(ctx: PanelContext): () => void {
