@@ -1,12 +1,29 @@
-// Serves the Power Sessions panel. Orca transpiles this file when it loads: no build step. Most of
-// what the panel reads and does goes through the `orca` CLI, which runs as the same user; showing a
-// folder workspace, which the CLI refuses, goes through the host's `workspace.open`.
+// Serves the Power Sessions panel. Orca transpiles this file when it loads: no build step. What
+// reaches Orca, its CLI, runtime and files, goes through src/orca/.
 import { randomUUID } from 'node:crypto'
 import { realpath } from 'node:fs/promises'
 import { createConnection } from 'node:net'
 import type { OrcaWorkerApi } from 'orca/worker'
 import { run } from './cli'
-import { agentPanes, chatSessionId, defaultAgent, orderLikeSidebar, paneOfTerminal, parseProjects, parseSessions, terminalOfPane, terminalServing, workspaceRanks } from './overview'
+import { agentPanes } from './orca/agents'
+import {
+  closeTerminal,
+  createTerminal,
+  launchAgent,
+  listProjects,
+  listRepos,
+  listTerminals,
+  listWorkspaces,
+  newTabAgent,
+  readTerminal,
+  sendToTerminal,
+  switchTerminal
+} from './orca/commands'
+import { compactChat, focusTab, selectedTab, tabCount } from './orca/runtime'
+import { tabPositions } from './orca/stores'
+import { outputCursor, paneOfTerminal, terminalOfPane, terminalServing, terminalTail } from './orca/terminals'
+import { folderOf, show, showWorkspace } from './orca/workspaces'
+import { orderLikeSidebar, parseProjects, parseSessions, workspaceRanks } from './overview'
 import type { Overview, Project, QuickAction, ActionStatus } from './protocol'
 import {
   actionTerminals,
@@ -14,25 +31,21 @@ import {
   linkProjects,
   listenerPids,
   listenersInFolder,
-  outputCursor,
   portOf,
   printedUrl,
   processFolders,
   processTerminal,
   relearnedUrl,
-  runCommand,
   saveAction,
   startStep,
   storedActions,
-  terminalTail,
   terminalTitle,
   runStates
 } from './servers'
 import type { RunObservation, RunState } from './servers'
+import { chatSessionId, runCommand } from './shared'
 import { pullRequestInfo } from './pulls'
-import { sessionUsage, tabPositions } from './usage'
-import { compactChat } from './chats'
-import { focusTab, folderAt, selectedTab, tabCount } from './tabs'
+import { sessionUsage } from './usage'
 
 // The quick actions, as the person last saved them.
 const ACTIONS_KEY = 'quickActions'
@@ -64,11 +77,6 @@ function answersOn(host: string, port: number): Promise<boolean> {
 export async function portOpen(port: number): Promise<boolean> {
   const [v4, v6] = await Promise.all([answersOn('127.0.0.1', port), answersOn('::1', port)])
   return v4 || v6
-}
-
-/** The handle `orca terminal create --json` answers with, wherever the result keeps it. */
-export function handleOf(json: string): string | null {
-  return /"(term_[^"]+)"/.exec(json)?.[1] ?? null
 }
 
 /** A new action's id: its name in lowercase letters and digits, and a short random part. */
@@ -130,7 +138,7 @@ export default function activate(orca: OrcaWorkerApi): void {
   }
 
   async function projects(): Promise<Project[]> {
-    const [projectsJson, reposJson] = await Promise.all([run('orca', ['project', 'list', '--json']), run('orca', ['repo', 'list', '--json'])])
+    const [projectsJson, reposJson] = await Promise.all([listProjects(), listRepos()])
     return parseProjects(projectsJson, reposJson, [])
   }
 
@@ -164,7 +172,7 @@ export default function activate(orca: OrcaWorkerApi): void {
     }
   }
 
-  /** The Orca terminal the listeners on a port were started in, as `terminalServing` in overview.ts finds it. */
+  /** The Orca terminal the listeners on a port were started in, as `terminalServing` in orca/terminals.ts finds it. */
   async function servingTerminal(pids: readonly number[], terminalsJson: string, agents: ReadonlySet<string>): Promise<string | null> {
     const processOf = async (pid: number) => {
       try {
@@ -239,8 +247,7 @@ export default function activate(orca: OrcaWorkerApi): void {
         }
         const cursor = started[a.id]
         try {
-          const read = ['terminal', 'read', '--terminal', terminal, '--limit', OUTPUT_LINES, ...(cursor ? ['--cursor', cursor] : []), '--json']
-          const json = await run('orca', read)
+          const json = await readTerminal(terminal, OUTPUT_LINES, cursor)
           const url = printedUrl(terminalTail(json))
           const next = cursor ? outputCursor(json, 'next') : null
           if (url) {
@@ -273,10 +280,10 @@ export default function activate(orca: OrcaWorkerApi): void {
 
   async function load(): Promise<Overview> {
     const [projectsJson, reposJson, psJson, terminalsJson, known] = await Promise.all([
-      run('orca', ['project', 'list', '--json']),
-      run('orca', ['repo', 'list', '--json']),
-      run('orca', ['worktree', 'ps', '--json']),
-      run('orca', ['terminal', 'list', '--json']),
+      listProjects(),
+      listRepos(),
+      listWorkspaces(),
+      listTerminals(),
       handles()
     ])
     const parsed = parseSessions(psJson, projectsJson)
@@ -303,10 +310,10 @@ export default function activate(orca: OrcaWorkerApi): void {
 
   /** The quick action's run state now, with the terminal the panel started it in, asking lsof even when the port check fails. */
   async function stateNow(a: QuickAction): Promise<RunState & { own: string | null; commandRunning: boolean }> {
-    const [list, terminalsJson, known] = await Promise.all([actions(), run('orca', ['terminal', 'list', '--json']), handles()])
+    const [list, terminalsJson, known] = await Promise.all([actions(), listTerminals(), handles()])
     const own = actionTerminals(list, terminalsJson, known)
     const mine = own[a.id] ?? null
-    const agents = async () => agentPanes(await run('orca', ['worktree', 'ps', '--json']))
+    const agents = async () => agentPanes(await listWorkspaces())
     const ports = probe(terminalsJson, agents)
     const [observed, running] = await Promise.all([ports.observe(a, mine, true), mine ? ports.commandRunning(mine) : Promise.resolve(false)])
     const watched = await watchStates([a], terminalsJson, [observed])
@@ -317,7 +324,7 @@ export default function activate(orca: OrcaWorkerApi): void {
   /** Where the terminal's output ends now, so the address the rerun prints is read from there. */
   async function outputEnd(terminal: string): Promise<string | null> {
     try {
-      return outputCursor(await run('orca', ['terminal', 'read', '--terminal', terminal, '--limit', '1', '--json']))
+      return outputCursor(await readTerminal(terminal, '1'))
     } catch {
       return null
     }
@@ -331,29 +338,24 @@ export default function activate(orca: OrcaWorkerApi): void {
     const step = startStep(state, own, running)
     if (step === 'show') {
       if (state.terminal) {
-        await run('orca', ['terminal', 'switch', '--terminal', state.terminal, '--json'])
+        await switchTerminal(state.terminal)
       }
       return null
     }
     if (step === 'rerun' && own) {
       // Its terminal is open but the server stopped: run the command there again.
       await markStart(a.id, await outputEnd(own))
-      await run('orca', ['terminal', 'send', '--terminal', own, '--text', runCommand(a.steps), '--enter', '--json'])
-      await run('orca', ['terminal', 'switch', '--terminal', own, '--json'])
+      await sendToTerminal(own, runCommand(a.steps))
+      await switchTerminal(own)
       return null
     }
     // A new terminal's whole output is this start's.
     await markStart(a.id, null)
-    const out = await run(
-      'orca',
-      ['terminal', 'create', '--worktree', `path:${a.path}`, '--title', terminalTitle(a), '--command', runCommand(a.steps), '--focus', '--json'],
-      30000
-    )
-    const handle = handleOf(out)
+    const { handle, output } = await createTerminal(a.path, terminalTitle(a), runCommand(a.steps))
     if (handle) {
       await write(async () => orca.storage.set(HANDLES_KEY, { ...(await handles()), [a.id]: handle }))
     } else {
-      orca.log(`no terminal handle in: ${out.slice(0, 300)}`)
+      orca.log(`no terminal handle in: ${output.slice(0, 300)}`)
     }
     return null
   }
@@ -384,7 +386,7 @@ export default function activate(orca: OrcaWorkerApi): void {
     // The terminal it is watched in: never a terminal of another service on its port.
     const live = (await stateNow(await action(id))).terminal
     if (live) {
-      await run('orca', ['terminal', 'close', '--terminal', live, '--json'])
+      await closeTerminal(live)
     }
     await forgetStarts([id])
     return null
@@ -400,9 +402,9 @@ export default function activate(orca: OrcaWorkerApi): void {
     return null
   })
   orca.panels.handle('session.compact', async ({ key }) => {
-    const terminal = terminalOfPane(await run('orca', ['terminal', 'list', '--json']), key)
+    const terminal = terminalOfPane(await listTerminals(), key)
     if (terminal) {
-      await run('orca', ['terminal', 'send', '--terminal', terminal, '--text', '/compact', '--enter', '--json'])
+      await sendToTerminal(terminal, '/compact')
       return null
     }
     const chat = chatSessionId(key)
@@ -418,28 +420,9 @@ export default function activate(orca: OrcaWorkerApi): void {
     return null
   })
   orca.panels.handle('session.selected', () => selectedTab())
-  /** The id of the folder workspace at `path`, which is also its runtime selector, or null for a Git worktree. */
-  const folderOf = async (path: string) => folderAt((await orca.host.call('workspace.list')).workspaces, path)
-
-  /** Shows a workspace in Orca's window. The CLI refuses to show a folder workspace, so a folder goes through `workspace.open`. */
-  async function show(path: string, folder: string | null): Promise<void> {
-    if (folder) {
-      await orca.host.call('workspace.open', { workspaceId: folder })
-    } else {
-      await run('orca', ['worktree', 'activate', '--worktree', `path:${path}`, '--json'])
-    }
-  }
-
-  /** Shows the workspace at `path` and answers the selector Orca's runtime knows it by. */
-  async function showWorkspace(path: string): Promise<string> {
-    const folder = await folderOf(path)
-    await show(path, folder)
-    return folder ?? `path:${path}`
-  }
-
   orca.panels.handle('session.focus', async ({ key, path }) => {
     // Orca focuses a tab only in the workspace on screen, so show the workspace first.
-    const workspace = await showWorkspace(path)
+    const workspace = await showWorkspace(orca, path)
     try {
       await focusTab(workspace, key)
     } catch (error) {
@@ -453,14 +436,14 @@ export default function activate(orca: OrcaWorkerApi): void {
    * per Orca's settings, in place of the plain terminal Orca opens in an empty workspace.
    */
   async function openWorkspace(path: string): Promise<null> {
-    const folder = await folderOf(path)
+    const folder = await folderOf(orca, path)
     const workspace = folder ?? `path:${path}`
     if ((await tabCount(workspace)) === 0) {
-      const agent = defaultAgent(await run('orca', ['agent', 'installed', '--json']).catch(() => '{}'))
+      const agent = await newTabAgent()
       if (agent) {
         try {
           // The CLI cannot show a folder, so a folder's agent starts in the background and is shown below.
-          await run('orca', ['agent', 'launch', '--agent', agent, '--worktree', workspace, ...(folder ? [] : ['--focus']), '--json'], 30000)
+          await launchAgent(agent, workspace, !folder)
           if (!folder) {
             return null
           }
@@ -470,7 +453,7 @@ export default function activate(orca: OrcaWorkerApi): void {
         }
       }
     }
-    await show(path, folder)
+    await show(orca, path, folder)
     return null
   }
 

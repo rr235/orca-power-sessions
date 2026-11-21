@@ -25,9 +25,8 @@ import {
   update,
   type PanelContext
 } from 'orca'
-import { tabOfPane } from './overview'
+import { runCommand, tabOfPane } from './shared'
 import type { Overview, Project, QuickActionInput, PullRequestInfo, Selected, ActionStatus, Session, SessionUsage } from './protocol'
-import { runCommand } from './servers'
 import { normalUrl } from './url'
 import { Icon, SessionDetails } from './session-details'
 import { startingActions, watchQuickActions } from './quick-action-polling'

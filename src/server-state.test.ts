@@ -17,6 +17,8 @@ test('finds the watched terminal by handle or title and remembers when it closed
   assert.deepEqual(actionTerminals([KB], terminalList({ ...KB_TERMINAL, worktreePath: '/c/x' }), KNOWN), { kb: null })
   const reissued = { ...KB_TERMINAL, handle: 'term_new', title: terminalTitle(KB) }
   assert.deepEqual(actionTerminals([KB], terminalList(reissued), KNOWN), { kb: 'term_new' })
+  assert.equal(terminalTitle(KB), '⚡ Knowledge Base server (kb)', 'running terminals are found by this title')
+  assert.deepEqual(actionTerminals([{ ...KB, id: 'kb2' }], terminalList(reissued), {}), {}, 'duplicate names never share a terminal')
   assert.deepEqual(actionTerminals([KB], terminalList(), {}), {}, 'never watched is distinct from closed')
 })
 
