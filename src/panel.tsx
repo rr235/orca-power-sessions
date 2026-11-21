@@ -5,6 +5,7 @@ import {
   Box,
   Button,
   Callout,
+  Code,
   env,
   IconButton,
   Input,
@@ -42,7 +43,7 @@ const SELECTED_HOLD_MS = 3000
 // The last overview, kept across panel runs so reopening shows it at once while it refreshes.
 const overview = atom<Overview | null>('overview', null, { persist: 'plugin', version: 8, migrate: () => null })
 // Which sections are open, kept across panel runs.
-const sections = atom<{ sessions?: boolean; actions: boolean }>('sections', { sessions: true, actions: true }, { persist: 'plugin' })
+const sections = atom<{ favourites?: boolean; sessions?: boolean; actions: boolean }>('sections', { favourites: true, sessions: true, actions: true }, { persist: 'plugin' })
 // Sessions whose details are open, by session key. Orca runs a panel per workspace, and showing a
 // session can switch workspace, so each change goes to the plugin's storage at once and every panel
 // takes the others' changes from there.
@@ -627,6 +628,63 @@ function groups(projects: Project[], sessions: Session[]): Group[] {
   return [...byKey.values()]
 }
 
+/** Shown in Sessions while Orca has no projects: how to add one, in the words of Orca's own buttons. */
+function NoProjectsNote() {
+  return (
+    <Callout title="No Orca projects found">
+      <Stack gap="xs">
+        <NoteGap />
+        <Text size="xs">{SESSIONS_DESCRIPTION}</Text>
+        <NoteGap />
+        <Text size="xs">To add a project:</Text>
+        <Text size="xs">1. Open the workspaces sidebar, click on the add project (folder with plus inside) icon.</Text>
+        <Text size="xs">2. Choose Browse folder for a folder you have, Clone from URL for a Git repository, or Create new project to start empty.</Text>
+        <Text size="xs">3. Start a session in the project. It appears here on its own.</Text>
+      </Stack>
+    </Callout>
+  )
+}
+
+/** Shown in Quick actions while none is saved: how to add one, with examples, in the form's own words. */
+function NoActionsNote() {
+  return (
+    <Callout tone="accent" title="No quick actions yet?">
+      <Stack gap="xs">
+        <NoteGap />
+        <Text size="xs">{ACTIONS_DESCRIPTION}</Text>
+        <NoteGap />
+        <Text size="xs">Click Add action below to add one.</Text>
+        <NoteGap />
+        <Text size="xs">Examples:</Text>
+        <ExampleLine label="- Single command:" commands={['npm run dev']} />
+        <ExampleLine label="- Multiple commands:" commands={['git pull', 'npm install', 'npm run build']} />
+      </Stack>
+    </Callout>
+  )
+}
+
+/** A blank line in a note: under its title, and between its parts. */
+const NoteGap = () => <Box height={8} shrink={false} />
+
+// What Sessions and Quick actions are for: under their headers, or first in their note while it shows.
+const SESSIONS_DESCRIPTION = 'All sessions are grouped by Orca projects.'
+const ACTIONS_DESCRIPTION = 'One click run for commands to run within your project folder.'
+
+/** One example in a note: its label, then each command as inline code, comma separated. */
+function ExampleLine({ label, commands }: { label: string; commands: string[] }) {
+  return (
+    <Box direction="row" align="center" gap="xs" wrap>
+      <Text size="xs">{label}</Text>
+      {commands.map((command, i) => (
+        <Box key={command} direction="row" align="center" gap="none">
+          <Code>{command}</Code>
+          {i < commands.length - 1 ? <Text size="xs">,</Text> : null}
+        </Box>
+      ))}
+    </Box>
+  )
+}
+
 function ProjectGroup({ group }: { group: Group }) {
   const { project } = group
   return (
@@ -829,6 +887,8 @@ function ActionForm({ id, servers, projects }: { id: string | null; servers: Ser
 const toggleActions = () => update(sections, (s) => ({ ...s, actions: !s.actions }))
 // Sessions stored before it could close have no flag, and stay open.
 const toggleSessions = () => update(sections, (s) => ({ ...s, sessions: s.sessions === false }))
+// Favourites stored before it could close have no flag, and stay open.
+const toggleFavourites = () => update(sections, (s) => ({ ...s, favourites: s.favourites === false }))
 
 export default function Panel() {
   const data = read(overview)
@@ -837,6 +897,9 @@ export default function Panel() {
   const open = read(sections)
   const form = read(editing)
   const sessionsOpen = open.sessions !== false
+  const favouritesOpen = open.favourites !== false
+  // Without projects, Sessions shows the note on adding one, and Favourites and Refresh hide.
+  const hasProjects = Boolean(data?.projects.length)
   const pins = read(pinned)
   const pinnedSessions = data ? pins.flatMap((key) => data.sessions.filter((s) => s.key === key)) : []
   return (
@@ -849,24 +912,35 @@ export default function Panel() {
         // One scrolling column: Pinned, Sessions and Quick actions follow each other at their own
         // height, so nothing is cut off; a closed section takes only its header.
         <Box grow minHeight={0} scroll="y" gap="md">
-          {/* Pinned sessions come first, each with its details open, in the order they were pinned.
-              A line divides them from Sessions. */}
-          {pinnedSessions.length ? (
+          {/* Favourites come first and show whenever Orca has a project, with a header like Sessions':
+              the arrow and the title open and close the section. Pinned sessions follow, each with its
+              details open, in the order they were pinned. A line divides them from Sessions. */}
+          {hasProjects ? (
             <Box shrink={false} gap="md">
-              <Box shrink={false}>
+              <Box gap="none" shrink={false}>
                 <List>
-                  <ListItem>
+                  <ListItem icon={favouritesOpen ? 'expand' : 'next'} onPress={toggleFavourites}>
                     <Text weight="medium">Favourites</Text>
                   </ListItem>
                 </List>
+                <Box direction="row" gap="none" paddingX="xs">
+                  <Box width={ICON_INSET_PX} minWidth={ICON_INSET_PX} shrink={false} />
+                  <Box grow minWidth={0}>
+                    <Text size="xs" muted>
+                      Pin session details by clicking on the star button.
+                    </Text>
+                  </Box>
+                </Box>
               </Box>
-              <Box shrink={false}>
-                <Stack gap="md">
-                  {pinnedSessions.map((session) => (
-                    <SessionRow key={session.key} session={session} inPinnedArea />
-                  ))}
-                </Stack>
-              </Box>
+              {favouritesOpen && pinnedSessions.length ? (
+                <Box shrink={false}>
+                  <Stack gap="md">
+                    {pinnedSessions.map((session) => (
+                      <SessionRow key={session.key} session={session} inPinnedArea />
+                    ))}
+                  </Stack>
+                </Box>
+              ) : null}
               <Box shrink={false}>
                 <Separator />
               </Box>
@@ -874,7 +948,8 @@ export default function Panel() {
           ) : null}
           <Box shrink={false} gap="md">
             {/* One pressable header like Quick actions': the arrow and the title open and close the
-                section together. Its refresh button closes every session's details and reads Orca again. */}
+                section together. Its refresh button closes every session's details and reads Orca again;
+                with no projects there is nothing to refresh, and the panel still reloads on its own. */}
             <Box gap="none" shrink={false}>
               <Box direction="row" align="center" justify="between" gap="sm">
                 <Box grow minWidth={0}>
@@ -884,21 +959,25 @@ export default function Panel() {
                     </ListItem>
                   </List>
                 </Box>
-                <IconButton icon="refresh" label="Refresh sessions" size="xs" variant="ghost" onPress={refresh} />
+                {hasProjects ? <IconButton icon="refresh" label="Refresh sessions" size="xs" variant="ghost" onPress={refresh} /> : null}
               </Box>
-              {/* The description starts where Quick actions' does. */}
-              <Box direction="row" gap="none" paddingX="xs">
-                <Box width={ICON_INSET_PX} minWidth={ICON_INSET_PX} shrink={false} />
-                <Box grow minWidth={0}>
-                  <Text size="xs" muted>
-                    All your sessions in one place, grouped by project.
-                  </Text>
+              {/* The description starts where Quick actions' does. While the no projects note shows,
+                  it is the note's first line instead. */}
+              {sessionsOpen && !hasProjects ? null : (
+                <Box direction="row" gap="none" paddingX="xs">
+                  <Box width={ICON_INSET_PX} minWidth={ICON_INSET_PX} shrink={false} />
+                  <Box grow minWidth={0}>
+                    <Text size="xs" muted>
+                      {SESSIONS_DESCRIPTION}
+                    </Text>
+                  </Box>
                 </Box>
-              </Box>
+              )}
             </Box>
             {sessionsOpen ? (
               <Box shrink={false}>
                 <Stack gap="md">
+                  {data.projects.length ? null : <NoProjectsNote />}
                   {groups(data.projects, data.sessions).map((group) => (
                     <ProjectGroup key={group.key} group={group} />
                   ))}
@@ -930,15 +1009,18 @@ export default function Panel() {
                 </ListItem>
               </List>
               {/* What the section is for, starting at the left edge of the Run icons below: the rows' inset,
-                  then the gap before an icon centred in its CONTROL_PX slot. */}
-              <Box direction="row" gap="none" paddingX="xs">
-                <Box width={ICON_INSET_PX} minWidth={ICON_INSET_PX} shrink={false} />
-                <Box grow minWidth={0}>
-                  <Text size="xs" muted>
-                    Quick actions for your most frequent scripts.
-                  </Text>
+                  then the gap before an icon centred in its CONTROL_PX slot. While the no actions note
+                  shows, it is the note's first line instead. */}
+              {open.actions && !data.servers.length ? null : (
+                <Box direction="row" gap="none" paddingX="xs">
+                  <Box width={ICON_INSET_PX} minWidth={ICON_INSET_PX} shrink={false} />
+                  <Box grow minWidth={0}>
+                    <Text size="xs" muted>
+                      {ACTIONS_DESCRIPTION}
+                    </Text>
+                  </Box>
                 </Box>
-              </Box>
+              )}
               {/* Room between the description and the actions when they show. */}
               {open.actions ? <Box height={8} shrink={false} /> : null}
             </Box>
@@ -962,9 +1044,7 @@ export default function Panel() {
                       )}
                     </Box>
                   ) : (
-                    <Text size="xs" muted>
-                      Click the + icon to create quick action commands.
-                    </Text>
+                    <NoActionsNote />
                   )}
                   {/* Add action sits under the servers; the form for a new action opens between them
                       and it, and Add action's button then closes it. While an action is edited, it
@@ -975,12 +1055,16 @@ export default function Panel() {
                         <ActionForm key={form} id={null} servers={data.servers} projects={data.projects} />
                       </Box>
                     ) : null}
-                    <LabelledButton
-                      text="Add action"
-                      icon={form === NEW_ACTION ? 'close' : 'add'}
-                      tooltip={form === NEW_ACTION ? 'Close new action' : undefined}
-                      onPress={() => (form === NEW_ACTION ? closeForm() : editAction(null))}
-                    />
+                    {/* Starts where the header's arrow and description do. */}
+                    <Box direction="row" gap="none" paddingX="xs">
+                      <Box width={ICON_INSET_PX} minWidth={ICON_INSET_PX} shrink={false} />
+                      <LabelledButton
+                        text="Add action"
+                        icon={form === NEW_ACTION ? 'close' : 'add'}
+                        tooltip={form === NEW_ACTION ? 'Close new action' : undefined}
+                        onPress={() => (form === NEW_ACTION ? closeForm() : editAction(null))}
+                      />
+                    </Box>
                   </Stack>
                 </Stack>
               </Box>

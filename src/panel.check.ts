@@ -25,5 +25,7 @@ export default defineCheck({
       'overview.load': () => ({ ...DEMO, sessions: DEMO.sessions.map((s) => (s.key === 'p2' ? { ...s, key: 'structured-agent-session-p2:leaf-1' } : s)) })
     }
   },
-  empty: { requests: { ...requests, 'overview.load': () => ({ ...DEMO, sessions: [] }) } }
+  empty: { requests: { ...requests, 'overview.load': () => ({ ...DEMO, sessions: [] }) } },
+  noProjects: { requests: { ...requests, 'overview.load': () => ({ ...DEMO, projects: [], sessions: [] }) } },
+  noActions: { requests: { ...requests, 'overview.load': () => ({ ...DEMO, servers: [] }) } }
 })
