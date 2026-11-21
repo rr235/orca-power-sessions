@@ -3,7 +3,7 @@
 // the worker keeps them in plugin storage. Each action is watched in one Orca terminal and counts as
 // running only while the process on its port was started in it (`runState`). Unless typed, the
 // address is learned again from what the server prints at each start.
-import { terminalAlive, terminalByTitle } from './overview'
+import { terminalAlive, terminalByTitle } from './orca/terminals'
 import type { Project, QuickAction, QuickActionInput } from './protocol'
 import { normalUrl } from './url'
 
@@ -161,16 +161,6 @@ export function saveAction(actions: QuickAction[], input: QuickActionInput, proj
   return actions.map((a) => (a.id === existing.id ? next : a))
 }
 
-/** The output lines of `orca terminal read --json`. */
-export function terminalTail(json: string): string[] {
-  try {
-    const tail = (JSON.parse(json) as { result?: { terminal?: { tail?: unknown } } }).result?.terminal?.tail
-    return Array.isArray(tail) ? tail.filter((line): line is string => typeof line === 'string') : []
-  } catch {
-    return []
-  }
-}
-
 /** The process ids `lsof -t` prints, one per line. */
 export function listenerPids(output: string): number[] {
   return [...new Set(output.split('\n').map((line) => Number(line.trim())).filter((pid) => Number.isInteger(pid) && pid > 1))]
@@ -197,20 +187,6 @@ export function listenersInFolder(pids: readonly number[], folders: ReadonlyMap<
     const folder = folders.get(pid)
     return folder !== undefined && (folder === root || folder.startsWith(`${root}/`))
   })
-}
-
-/**
- * A cursor from `orca terminal read --json`: `latest`, where its output ends, so a later read returns
- * only what follows; `next`, where the page just read ends.
- */
-export function outputCursor(json: string, which: 'latest' | 'next' = 'latest'): string | null {
-  try {
-    const terminal = (JSON.parse(json) as { result?: { terminal?: { latestCursor?: unknown; nextCursor?: unknown } } }).result?.terminal
-    const cursor = which === 'latest' ? (terminal?.latestCursor ?? terminal?.nextCursor) : terminal?.nextCursor
-    return typeof cursor === 'string' || typeof cursor === 'number' ? String(cursor) : null
-  } catch {
-    return null
-  }
 }
 
 /**

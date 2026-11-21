@@ -25,7 +25,7 @@ import {
   update,
   type PanelContext
 } from 'orca'
-import { tabOfPane } from './overview'
+import { tabOfPane } from './shared'
 import type { Overview, Project, QuickActionInput, PullRequestInfo, Selected, ActionStatus, Session, SessionUsage } from './protocol'
 import { runCommand } from './servers'
 import { normalUrl } from './url'

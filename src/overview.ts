@@ -1,4 +1,5 @@
 // Turns the `orca` CLI's JSON into what the panel shows. Pure, so the tests feed it fixtures.
+import { result } from './orca/json'
 import type { AgentState, Project, PullRequest, Session } from './protocol'
 
 type ProjectRow = {
@@ -38,9 +39,7 @@ export type PsRow = {
   linkedItems?: { type?: string; number?: number; url?: string; origins?: { tabId?: string }[] }[]
   agents?: AgentRow[]
 }
-type TerminalRow = { handle?: string; title?: string | null; connected?: boolean; tabId?: string; leafId?: string; worktreePath?: string }
 
-const result = <T>(json: string): T => ((JSON.parse(json) as { result?: T }).result ?? ({} as T))
 
 // Agent icon files shipped in assets/agents/, by Orca's agent type.
 const AGENT_ICONS = new Set(['claude', 'codex'])
@@ -208,126 +207,4 @@ export function parseProjects(projectsJson: string, reposJson: string, sessions:
         }
       ]
     })
-}
-
-const CHAT_PANE = 'structured-agent-session-'
-const SAFE_ID = /^[A-Za-z0-9_-]+$/
-
-/** Orca's session id for a chat pane (`structured-agent-session-<id>:<leaf>`), else null. */
-export function chatSessionId(paneKey: string): string | null {
-  if (!paneKey.startsWith(CHAT_PANE)) {
-    return null
-  }
-  const id = paneKey.slice(CHAT_PANE.length).split(':')[0]
-  return SAFE_ID.test(id) ? id : null
-}
-
-/**
- * The tab Orca's runtime knows a session's pane by. A chat's pane key is
- * `structured-agent-session-<sessionId>:<leafId>` and its tab is `agent-session:<sessionId>`; a
- * terminal's pane key is `<tabId>:<leafId>`.
- */
-export function tabOfPane(paneKey: string): { tabId: string; leafId?: string } | null {
-  const chat = chatSessionId(paneKey)
-  if (chat) {
-    return { tabId: `agent-session:${chat}` }
-  }
-  const [tabId, leafId] = paneKey.split(':')
-  return tabId && leafId ? { tabId, leafId } : null
-}
-
-/** The live terminal with this title in the action's checkout, from `orca terminal list --json`. */
-export function terminalByTitle(terminalsJson: string, title: string, path: string): string | null {
-  const terminals = result<{ terminals?: TerminalRow[] }>(terminalsJson).terminals ?? []
-  return terminals.find((t) => t.title === title && t.worktreePath === path && t.connected !== false)?.handle ?? null
-}
-
-/**
- * The live terminal of an agent's pane, whose key is `<tabId>:<leafId>` in `orca terminal list
- * --json`. A chat session's pane has no terminal.
- */
-export function terminalOfPane(terminalsJson: string, paneKey: string): string | null {
-  const terminals = result<{ terminals?: TerminalRow[] }>(terminalsJson).terminals ?? []
-  return terminals.find((t) => `${t.tabId}:${t.leafId}` === paneKey && t.connected !== false)?.handle ?? null
-}
-
-/**
- * The live terminal of a process's Orca environment: by its pane, which outlives a reissued handle,
- * else by its handle. An agent's terminal is never one, so Stop never closes an agent.
- */
-export function terminalOfProcess(terminalsJson: string, paneKey: string | null, handle: string | null, agents: ReadonlySet<string>): string | null {
-  const terminals = result<{ terminals?: TerminalRow[] }>(terminalsJson).terminals ?? []
-  const live = terminals.filter((t) => t.connected !== false)
-  const found = (paneKey ? live.find((t) => `${t.tabId}:${t.leafId}` === paneKey) : undefined) ?? (handle ? live.find((t) => t.handle === handle) : undefined)
-  return found && !agents.has(`${found.tabId}:${found.leafId}`) ? (found.handle ?? null) : null
-}
-
-/** A process as `processTerminal` in servers.ts reads it. */
-type ProcessInfo = { ppid: number | null; detached: boolean; paneKey: string | null; handle: string | null }
-
-// How far up from a server's process to look for the terminal it runs in.
-const MAX_ANCESTORS = 12
-
-/**
- * The Orca terminal serving a port: every listener must lead to the same live terminal through
- * its nearest ancestor with Orca's terminal environment. Otherwise the port is ambiguous, or
- * closing a terminal would leave a listener running (such as a detached server).
- */
-export async function terminalServing(
-  pids: readonly number[],
-  processOf: (pid: number) => Promise<ProcessInfo | null>,
-  terminalsJson: string,
-  agents: ReadonlySet<string>
-): Promise<string | null> {
-  let serving: string | null = null
-  for (const pid of pids) {
-    let terminal: string | null = null
-    let current: number | null = pid
-    for (let depth = 0; current && depth < MAX_ANCESTORS; depth++) {
-      const found = await processOf(current)
-      if (!found || (depth === 0 && found.detached)) {
-        break
-      }
-      if (found.paneKey || found.handle) {
-        // The nearest Orca environment decides: an outer one belongs to a terminal that is not serving.
-        terminal = terminalOfProcess(terminalsJson, found.paneKey, found.handle, agents)
-        break
-      }
-      current = found.ppid
-    }
-    if (!terminal || (serving && serving !== terminal)) {
-      return null
-    }
-    serving = terminal
-  }
-  return serving
-}
-
-/** The panes agents run in, from `orca worktree ps --json`: a server started by an agent is not the agent's terminal to close. */
-export function agentPanes(psJson: string): Set<string> {
-  const rows = result<{ worktrees?: PsRow[] }>(psJson).worktrees ?? []
-  return new Set(rows.flatMap((row) => (row.agents ?? []).flatMap((agent) => (agent.paneKey ? [agent.paneKey] : []))))
-}
-
-/** The pane of a live terminal, `<tabId>:<leafId>`, as its processes carry it in `ORCA_PANE_KEY`. */
-export function paneOfTerminal(terminalsJson: string, handle: string): string | null {
-  const terminals = result<{ terminals?: TerminalRow[] }>(terminalsJson).terminals ?? []
-  const found = terminals.find((t) => t.handle === handle && t.connected !== false)
-  return found?.tabId && found.leafId ? `${found.tabId}:${found.leafId}` : null
-}
-
-/** The agent a new tab starts in Orca's settings, from `orca agent installed --json`, or null when none is set. */
-export function defaultAgent(installedJson: string): string | null {
-  try {
-    const agents = result<{ agents?: { id?: string; default?: boolean }[] }>(installedJson).agents ?? []
-    return agents.find((a) => a.default === true && a.id)?.id ?? null
-  } catch {
-    return null
-  }
-}
-
-/** Whether a terminal handle is still live in this checkout in `orca terminal list --json`. */
-export function terminalAlive(terminalsJson: string, handle: string, path: string): boolean {
-  const terminals = result<{ terminals?: TerminalRow[] }>(terminalsJson).terminals ?? []
-  return terminals.some((t) => t.handle === handle && t.worktreePath === path && t.connected !== false)
 }
