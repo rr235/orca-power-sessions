@@ -182,7 +182,7 @@ export function ContextFact({ used, window }: { used: number | null; window: num
  * Why a session has no turns to show, in their place: only Claude and Codex transcripts are read,
  * and one may not be found. Null when the turns are known.
  */
-export function usageGap(session: Session, stats: SessionUsage | undefined): string | null {
+function usageGap(session: Session, stats: SessionUsage | undefined): string | null {
   if (!session.agent || !AGENT_LABEL[session.agent]) {
     return 'Usage is only read for Claude and Codex sessions.'
   }
@@ -207,35 +207,45 @@ export function turnsTone(turns: number): 'warning' | 'danger' | undefined {
  * context has been compacted, then the totals in the same shape, `40 turns, 186 tool calls, 3
  * compactions`, all muted. Before the first compaction the total turns take the colour instead.
  */
-export function TurnsFact({ stats }: { stats: SessionUsage }) {
-  const turns = countLabel(stats.turns ?? 0, 'turn')
-  const compactions = stats.compactions
+export function TurnsFact({ session, stats }: { session: Session; stats: SessionUsage | undefined }) {
+  const gap = usageGap(session, stats)
+  const turns = countLabel(stats?.turns ?? 0, 'turn')
+  const compactions = stats?.compactions
   const rest = [
-    stats.toolCalls != null ? countLabel(stats.toolCalls, 'tool call') : null,
+    stats?.toolCalls != null ? countLabel(stats.toolCalls, 'tool call') : null,
     compactions != null ? countLabel(compactions, 'compaction') : null
   ].filter((part) => part !== null)
-  return (
-    <Box gap="xs" minWidth={0}>
-      {compactions && stats.turnsSinceCompaction != null ? (
-        <Text size="xs" truncate>
-          <Text size="xs" tone={turnsTone(stats.turnsSinceCompaction)}>
-            {`${countLabel(stats.turnsSinceCompaction, 'turn')}${stats.toolCallsSinceCompaction != null ? ', ' : ' '}`}
-          </Text>
-          <Text size="xs" muted>
-            {`${stats.toolCallsSinceCompaction != null ? `${countLabel(stats.toolCallsSinceCompaction, 'tool call')} ` : ''}since the last compaction`}
-          </Text>
+  const total = (
+    <Text size="xs" truncate>
+      <Text size="xs" muted={Boolean(compactions)} tone={compactions ? undefined : turnsTone(stats?.turns ?? 0)}>
+        {rest.length ? `${turns}, ` : turns}
+      </Text>
+      {rest.length ? (
+        <Text size="xs" muted>
+          {rest.join(', ')}
         </Text>
       ) : null}
-      <Text size="xs" truncate>
-        <Text size="xs" muted={Boolean(compactions)} tone={compactions ? undefined : turnsTone(stats.turns ?? 0)}>
-          {rest.length ? `${turns}, ` : turns}
-        </Text>
-        {rest.length ? (
-          <Text size="xs" muted>
-            {rest.join(', ')}
-          </Text>
-        ) : null}
+    </Text>
+  )
+  const since = !gap && compactions && stats?.turnsSinceCompaction != null ? (
+    <Text size="xs" truncate>
+      <Text size="xs" tone={turnsTone(stats.turnsSinceCompaction)}>
+        {`${countLabel(stats.turnsSinceCompaction, 'turn')}${stats.toolCallsSinceCompaction != null ? ', ' : ' '}`}
       </Text>
+      <Text size="xs" muted>
+        {`${stats.toolCallsSinceCompaction != null ? `${countLabel(stats.toolCallsSinceCompaction, 'tool call')} ` : ''}since the last compaction`}
+      </Text>
+    </Text>
+  ) : null
+  return (
+    <Box gap="xs" minWidth={0}>
+      {gap ? (
+        <Text size="xs" muted truncate>
+          {gap}
+        </Text>
+      ) : since ?? total}
+      {/* A nonbreaking space reserves the second line using the same themed text height. */}
+      {since ? total : <Text size="xs">{'\u00a0'}</Text>}
     </Box>
   )
 }
@@ -329,7 +339,6 @@ export function SessionDetails({ session, stats, loading, info, titleLoading, co
   // Only a Claude or Codex transcript has numbers to wait for, and only the first read shows
   // skeletons: a refresh keeps the numbers already shown.
   const pending = !stats && loading && Boolean(session.agent && AGENT_LABEL[session.agent])
-  const gap = usageGap(session, stats)
   return (
     <Box background="accent" radius="lg" padding="sm" gap="sm" margin="xs">
       <StatusFact session={session} compacting={compacting} onCompact={onCompact} favourite={favourite} />
@@ -346,13 +355,7 @@ export function SessionDetails({ session, stats, loading, info, titleLoading, co
         <Box gap="xs">
           <ModelFact session={session} stats={stats} />
           <ContextFact used={stats?.context ?? null} window={stats?.contextWindow ?? null} />
-          {stats && !gap ? (
-            <TurnsFact stats={stats} />
-          ) : (
-            <Text size="xs" muted truncate>
-              {gap}
-            </Text>
-          )}
+          <TurnsFact session={session} stats={stats} />
         </Box>
       )}
       {/* The branch, with its pull requests below it, set off from the usage by a rule; a long

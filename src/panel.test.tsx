@@ -1,5 +1,5 @@
 // `orca plugin test .` runs this in Node with the same runtime and checks Orca uses.
-import { assert, mockHost, mount, test } from 'orca/testing'
+import { assert, mockHost, mount, test, type TreeSnapshot } from 'orca/testing'
 import { storage } from 'orca'
 import { mock } from 'node:test'
 import { DEMO, DEMO_USAGE, DEMO_WORKTREES } from './fixtures'
@@ -707,27 +707,50 @@ test('shows skeletons only for what the details are still reading', async () => 
   }
 })
 
-test('says why a session has no usage, keeping every usage row', async () => {
-  // p1 is a Claude session whose transcript was not found; p2 runs an agent whose usage is not read.
-  const overview = { ...DEMO, sessions: DEMO.sessions.map((s) => (s.key === 'p2' ? { ...s, agent: 'gemini', agentIcon: null } : s)) }
-  const host = mockHost({
-    requests: { 'overview.load': () => overview, 'session.usage': () => ({}), 'pr.info': () => ({}) },
-    storage: { expanded: { p1: true, p2: true } }
-  })
-  const view = await mount(panel, { host })
-  try {
-    await view.settled()
-    assert.ok(view.find({ type: 'Text', text: 'No transcript found for this session.' }), 'a Claude session without a transcript')
-    assert.ok(view.find({ type: 'Text', text: 'Usage is only read for Claude and Codex sessions.' }), 'another agent')
-    // The context bar shows empty and the tokens and context read NA, one of each per open card.
-    const bars = view.findAll({ type: 'Progress' })
-    assert.deepEqual(bars.map((bar) => bar.props.value), [0, 0])
-    assert.equal(view.findAll({ type: 'Button', text: 'NA' }).length, 2, 'tokens')
-    assert.equal(view.findAll({ text: /^NA\s*\/ NA$/ }).length, 2, 'context')
-    assert.deepEqual(view.errors, [])
-  } finally {
-    await view.unmount()
+test('explains missing usage and reserves the same lines for known, partial and missing usage', async () => {
+  const missing = 'No transcript found for this session.'
+  const unsupported = 'Usage is only read for Claude and Codex sessions.'
+  const partial = { ...DEMO_USAGE.p3, context: 121_400 }
+  const zero = { ...DEMO_USAGE.p2, turns: 0, compactions: 0, toolCalls: 0 }
+  const cases = [
+    { agent: 'claude', stats: undefined, note: missing },
+    { agent: 'codex', stats: undefined, note: missing },
+    { agent: 'gemini', stats: undefined, note: unsupported },
+    { agent: null, stats: undefined, note: unsupported },
+    { agent: 'claude', stats: partial, note: missing },
+    { agent: 'codex', stats: zero, note: '0 turns, 0 tool calls, 0 compactions' },
+    { agent: 'claude', stats: DEMO_USAGE.p1, note: '40 turns, 186 tool calls, 3 compactions' }
+  ]
+  // Text children are inline spans, so stop at each outer Text to count the rendered line slots.
+  const lines = (node: TreeSnapshot | string | null): number =>
+    !node || typeof node === 'string' ? 0 : node.type === 'Text' ? 1 : (node.children ?? []).reduce((sum, child) => sum + lines(child), 0)
+  const counts: number[] = []
+  for (const { agent, stats, note } of cases) {
+    const session = { ...DEMO.sessions[0], agent, prs: [] }
+    const host = mockHost({
+      requests: { 'overview.load': () => ({ ...DEMO, sessions: [session] }), 'session.usage': () => stats ? { [session.key]: stats } : {} },
+      storage: { expanded: { [session.key]: true } }
+    })
+    const view = await mount(panel, { host })
+    try {
+      await view.settled()
+      assert.ok(view.find({ type: 'Text', text: note }), `${agent}: ${note}`)
+      assert.equal(view.findAll({ type: 'Progress' }).length, 1, 'context bar always renders')
+      if (stats?.tokens == null) {
+        assert.ok(view.find({ type: 'Button', text: 'NA' }), 'unknown tokens keep the button')
+        assert.equal(view.find({ type: 'Progress' })?.props.value, 0, 'unknown percent keeps an empty bar')
+        assert.ok(view.find({ text: stats?.context != null ? /^121k\s*\/ NA$/ : /^NA\s*\/ NA$/ }), 'partial context keeps its known value')
+      }
+      if (stats === DEMO_USAGE.p1) {
+        assert.ok(view.find({ type: 'Text', text: '24 turns, 48 tool calls since the last compaction' }))
+      }
+      counts.push(lines(view.tree()))
+      assert.deepEqual([view.errors, view.warnings], [[], []])
+    } finally {
+      await view.unmount()
+    }
   }
+  assert.ok(counts.every((count) => count === counts[0]), `equal line slots: ${counts}`)
 })
 
 test('edits, adds and deletes quick actions', async () => {
