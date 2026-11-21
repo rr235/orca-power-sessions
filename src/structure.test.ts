@@ -22,7 +22,7 @@ function sources(dir = SRC): { path: string; text: string }[] {
 /** A file's import specifiers, relative ones resolved to a path under src/. */
 function imports(file: { path: string; text: string }): string[] {
   const specifiers = [...file.text.matchAll(/^\s*(?:import|export)\s[^'"]*?\sfrom\s+['"]([^'"]+)['"]|^\s*import\s+['"]([^'"]+)['"]/gm)].map((m) => m[1] ?? m[2])
-  return specifiers.map((s) => (s.startsWith('.') ? relative(SRC, resolve(SRC, dirname(file.path), s)) : s))
+  return specifiers.map((s) => (s.startsWith('.') ? relative(SRC, resolve(SRC, dirname(file.path), s)).replace(/\.tsx?$/, '') : s))
 }
 
 const isTest = (path: string) => /\.(test|check)\.tsx?$/.test(path)
