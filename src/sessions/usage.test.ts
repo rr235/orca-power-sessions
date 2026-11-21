@@ -1,30 +1,26 @@
 import { assert, test } from 'orca/testing'
-import { chatSessionId } from '../shared'
-import { chatSource, claudeWindow, currentContext, Tally } from './usage'
+import { flattened, replySnippet, Tally } from './usage'
 
-test('forgets the context at a compaction, and takes a newer report from Orca', () => {
+test('takes the context Claude records after a compaction, else forgets it until the next reply', () => {
   const tally = new Tally()
   const reply = (id: string, input: number, timestamp: string) =>
     JSON.stringify({ type: 'assistant', timestamp, message: { id, model: 'claude-opus-5-5', usage: { input_tokens: input, cache_read_input_tokens: 0, output_tokens: 1 } } })
   tally.feed(reply('m1', 189_000, '2026-11-09T19:00:00.000Z'))
   assert.equal(tally.context, 189_000)
-  const before = { window: 400_000, used: 150_000, at: Date.parse('2026-11-09T18:00:00.000Z') }
-  assert.equal(currentContext(tally, before), 189_000, 'an older report does not win')
   tally.feed(JSON.stringify({ type: 'system', subtype: 'compact_boundary', timestamp: '2026-11-09T19:10:00.000Z' }))
   assert.equal(tally.context, null, 'unknown after a compaction')
-  assert.equal(currentContext(tally, undefined), null)
-  assert.equal(currentContext(tally, before), null, 'a report from before the compaction stays hidden')
-  const after = { window: 400_000, used: 78_857, at: Date.parse('2026-11-09T19:11:00.000Z') }
-  assert.equal(currentContext(tally, after), 78_857)
   tally.feed(reply('m2', 80_000, '2026-11-09T19:20:00.000Z'))
-  assert.equal(currentContext(tally, after), 80_000, 'the next reply is newer than the report')
+  assert.equal(tally.context, 80_000)
+  tally.feed(JSON.stringify({ type: 'system', subtype: 'compact_boundary', timestamp: '2026-11-09T19:30:00.000Z', compactMetadata: { trigger: 'auto', preTokens: 367_505, postTokens: 54_707 } }))
+  assert.equal(tally.context, 54_707)
 })
 
-test('counts Claude tokens once per message and keeps the latest model', () => {
+test('counts Claude tokens once per message and keeps the latest model and effort', () => {
   const tally = new Tally()
   const line = (id: string, model: string, output: number) =>
     JSON.stringify({
       type: 'assistant',
+      effort: model.startsWith('<') ? undefined : output > 10 ? 'max' : 'high',
       message: { id, model, usage: { input_tokens: 2, cache_creation_input_tokens: 10, cache_read_input_tokens: 100, output_tokens: output } }
     })
   // Two lines of one message (the second with the final output count), then a second message.
@@ -34,6 +30,7 @@ test('counts Claude tokens once per message and keeps the latest model', () => {
   // Input written to the cache counts as input, input read from it as cached.
   assert.deepEqual(tally.tokenSplit, { input: 36, cached: 300, output: 28 })
   assert.equal(tally.model, 'claude-opus-5-5')
+  assert.equal(tally.effort, 'max')
   // Context is the last main-thread message's input; a subagent's turn does not count.
   assert.equal(tally.context, 112)
   tally.feed(JSON.stringify({ isSidechain: true, message: { id: 's1', usage: { input_tokens: 5 } } }))
@@ -115,13 +112,6 @@ test('counts the turns a person started in Codex and its compactions', () => {
   assert.deepEqual([tally.turns, tally.compactions, tally.turnsSinceCompaction, tally.toolCalls, tally.toolCallsSinceCompaction], [3, 1, 1, 2, 1])
 })
 
-test('knows Claude context windows by model', () => {
-  assert.deepEqual(
-    ['claude-opus-5-5', 'claude-haiku-5-5', 'claude-opus-4-6', 'claude-sonnet-4-5-20250929', 'claude-sonnet-4-5[1m]', 'claude-haiku-4-5', 'kimi-k3'].map(claudeWindow),
-    [1_000_000, 1_000_000, 1_000_000, 200_000, 1_000_000, 200_000, null]
-  )
-})
-
 test('reads Codex model, effort and total tokens from its rollout', () => {
   const tally = new Tally()
   tally.feed(
@@ -155,17 +145,11 @@ test('reads Codex model, effort and total tokens from its rollout', () => {
   assert.equal(tally.tokens, 12_230_425)
 })
 
-test('traces chat and terminal sessions to their transcripts', () => {
-  assert.equal(chatSessionId('structured-agent-session-claude_dc33_6b69:leaf-1'), 'claude_dc33_6b69')
-  assert.equal(chatSessionId('tab-1:leaf-1'), null)
-  const chat = chatSource({
-    provider: 'claude',
-    accountHome: { path: '/h/.claude' },
-    location: { workspaceId: 'repo::/Users/me/Code/my.app' },
-    options: { model: 'claude-opus-5-5', effort: 'high' },
-    providerHandleChain: [{ handle: { sessionId: 'old' } }, { handle: { sessionId: 'new' } }]
-  })
-  assert.deepEqual([chat?.transcript, chat?.model, chat?.effort], ['/h/.claude/projects/-Users-me-Code-my-app/new.jsonl', 'claude-opus-5-5', 'high'])
-  const codex = chatSource({ provider: 'codex', providerHandleChain: [{ handle: { threadId: 't-1' } }] })
-  assert.deepEqual([codex?.transcript, codex?.codexThread], [null, 't-1'])
+test('finds a reply as Orca shows it in the transcript line that holds it', () => {
+  // Orca shows a reply on one line; the transcript holds its line breaks as JSON escapes.
+  const line = JSON.stringify({ message: { content: 'Done.\n\nThe tests pass and the "filter" labels sit on one row.' } })
+  const snippet = replySnippet('Done. The tests pass and the "filter" labels sit on one row.')
+  assert.equal(snippet, 'Done. The tests pass and the ')
+  assert.ok(flattened(line).includes(snippet as string))
+  assert.equal(replySnippet('Done.'), null)
 })

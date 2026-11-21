@@ -10,11 +10,9 @@ const ORCA_CLI = process.env.ORCA_CLI_COMMAND
     ? ['orca-ide']
     : ['orca', '/Applications/Orca.app/Contents/Resources/bin/orca']
 
-// sqlite3 reads Orca's session store, for chat sessions' model and effort; macOS ships it. gh reads
-// pull request titles, from Homebrew's install location when it is not on PATH.
+// gh reads pull request titles, from Homebrew's install location when it is not on PATH.
 const CANDIDATES = {
   orca: ORCA_CLI,
-  sqlite3: ['sqlite3', '/usr/bin/sqlite3'],
   gh: ['gh', '/opt/homebrew/bin/gh', '/usr/local/bin/gh'],
   // lsof and ps find the terminal a server started outside the panel runs in.
   lsof: ['lsof', '/usr/sbin/lsof', '/usr/bin/lsof'],

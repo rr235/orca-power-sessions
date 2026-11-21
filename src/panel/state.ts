@@ -197,7 +197,9 @@ export async function loadSelected(): Promise<void> {
   try {
     const shown = await plugin.request('session.selected', undefined, { timeoutMs: 10000 })
     if (Date.now() >= selectedHeldUntil) {
-      set(selected, shown)
+      // Orca names only the workspace: the session last shown from here stays marked while it is on screen.
+      const known = read(selected)
+      set(selected, shown && shown.key === null && known?.worktreeId === shown.worktreeId ? known : shown)
     }
   } catch {
     // The titles keep the last known selection.

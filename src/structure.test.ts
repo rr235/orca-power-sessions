@@ -29,9 +29,14 @@ const isTest = (path: string) => /\.(test|check)\.tsx?$/.test(path)
 const inFolder = (path: string, folder: string) => path.startsWith(`${folder}/`) || path === folder
 const files = sources().filter((f) => f.path !== THIS)
 
-test('only src/orca reaches Orca: its CLI, its databases and its runtime client', () => {
-  const reaching = files.filter((f) => !inFolder(f.path, 'orca') && /\brun\(\s*['"](orca|sqlite3)['"]|\brunInOrca\(/.test(f.text))
+test('only src/orca reaches Orca, through its CLI and host API', () => {
+  const reaching = files.filter((f) => !inFolder(f.path, 'orca') && /\brun\(\s*['"]orca['"]|\.host\.call\(/.test(f.text))
   assert.deepEqual(reaching.map((f) => f.path), [])
+})
+
+test('nothing reads Orca\'s private files or calls its runtime client', () => {
+  const privateAccess = /Application Support['"]?,?\s*['"]?orca|agent-session-(domain|journal)|last-status\.(db|json)|sqlite3|RuntimeClient|ELECTRON_RUN_AS_NODE|app\.asar/
+  assert.deepEqual(files.filter((f) => privateAccess.test(f.text)).map((f) => f.path), [])
 })
 
 test('src/sessions and src/actions never import each other', () => {

@@ -6,8 +6,8 @@ import { createConnection } from 'node:net'
 import { run } from '../cli'
 import { paneOfTerminal, terminalServing } from '../orca/terminals'
 import type { QuickAction } from '../protocol'
-import { commandRunning, listenerPids, listenersInFolder, portOf, processFolders, processTerminal } from './rules'
-import type { RunObservation } from './rules'
+import { commandRunning, foregroundCommands, listenerPids, listenersInFolder, orcaVariables, portOf, processFolders, processParent } from './rules'
+import type { OrcaVariables, RunObservation } from './rules'
 
 const PORT_TIMEOUT_MS = 400
 
@@ -62,30 +62,53 @@ async function inFolder(log: Log, pids: readonly number[], folder: string): Prom
   }
 }
 
+/**
+ * The Orca variables of these processes only, by pid. ps cannot pick variables, so it hands over each
+ * one's environment and `orcaVariables` keeps the two Orca sets; nothing else is kept or logged.
+ */
+async function variablesOf(log: Log, pids: readonly number[]): Promise<Map<number, OrcaVariables>> {
+  if (!pids.length) {
+    return new Map()
+  }
+  try {
+    return orcaVariables(await run('ps', ['eww', '-o', 'pid=,command=', '-p', pids.join(',')]))
+  } catch (error) {
+    // ps also fails when every process just exited.
+    logMissing(log, error)
+    return new Map()
+  }
+}
+
 /** The Orca terminal the listeners on a port were started in, as `terminalServing` in orca/terminals.ts finds it. */
 async function servingTerminal(log: Log, pids: readonly number[], terminalsJson: string, agents: ReadonlySet<string>): Promise<string | null> {
   const processOf = async (pid: number) => {
+    let parent
     try {
-      return processTerminal(await run('ps', ['eww', '-o', 'ppid=,tty=,command=', '-p', String(pid)]))
+      parent = processParent(await run('ps', ['-o', 'ppid=,tty=', '-p', String(pid)]))
     } catch (error) {
-      // ps also fails for a process that just exited.
       logMissing(log, error)
       return null
     }
+    // A process without a terminal was not started in one: its environment is never read.
+    const variables = parent.detached ? undefined : (await variablesOf(log, [pid])).get(pid)
+    return { ...parent, paneKey: variables?.paneKey ?? null, handle: variables?.handle ?? null }
   }
   return terminalServing(pids, processOf, terminalsJson, agents)
 }
 
 /** Read observations separately from the terminal ownership policy in rules.ts. */
 export function probe(terminalsJson: string, agents: () => Promise<ReadonlySet<string>>, log: Log) {
-  // One process list per probe, read only when a terminal is asked about.
-  let processes: Promise<string> | null = null
-  const processList = () =>
-    (processes ??= run('ps', ['eww', '-ax', '-o', 'pid=,tty=,stat=,command=']).catch((error) => {
-      logMissing(log, error)
-      return ''
-    }))
-  const running = async (terminal: string) => commandRunning(await processList(), paneOfTerminal(terminalsJson, terminal), terminal)
+  // One read per probe, made only when a terminal is asked about: the foreground commands by name,
+  // then the Orca variables of those processes alone.
+  let foreground: Promise<Map<number, OrcaVariables>> | null = null
+  const foregroundVariables = () =>
+    (foreground ??= run('ps', ['-ax', '-o', 'pid=,tty=,stat=,comm='])
+      .catch((error) => {
+        logMissing(log, error)
+        return ''
+      })
+      .then((list) => variablesOf(log, foregroundCommands(list))))
+  const running = async (terminal: string) => commandRunning(await foregroundVariables(), paneOfTerminal(terminalsJson, terminal), terminal)
   return {
     commandRunning: running,
     async observe(a: QuickAction, own: string | null, listening = false): Promise<RunObservation> {

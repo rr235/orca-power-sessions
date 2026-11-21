@@ -1,44 +1,47 @@
-// Each session's model, effort and token use. Orca's CLI does not report them, so they come from
-// where the agents record them: Orca's hook status file (terminal sessions), Orca's session store
-// (chat sessions), both read in orca/stores.ts, and the agent's own transcript, which is read once
-// and then only as it grows.
-import { open, readdir, stat } from 'node:fs/promises'
+// Each session's model, effort and token use. Orca does not report them, so they come from the
+// agent's own transcript, found by the session id Orca's host gives each pane, read once and then
+// only as it grows. A Claude session's window and effort come from Claude Code's settings and flags.
+import { access, open, readdir, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { chatRecords, contextReports, hookStatus, sessionStore } from '../orca/stores'
-import type { ChatRecord, ContextReport, Source } from '../orca/stores'
+import type { OrcaWorkerApi } from 'orca/worker'
+import { agentSessions } from '../orca/agent-sessions'
+import type { AgentSession } from '../orca/agent-sessions'
+import { listWorkspaces } from '../orca/commands'
+import { contextWindow, effortOf, liveLaunches, NO_LAUNCH, settingsFor } from './claude-settings'
+import type { ClaudeSettings } from './claude-settings'
 import type { SessionUsage, TokenSplit } from '../protocol'
-import { chatSessionId } from '../shared'
 
 /** Claude names a project's transcript folder after its working directory. */
 const claudeFolder = (cwd: string) => cwd.replace(/[^A-Za-z0-9]/g, '-')
 
-/** A chat session's model and effort as chosen in Orca, and where its transcript should be. */
-export function chatSource(record: ChatRecord): (Source & { codexThread: string | null; createdAt: number }) | null {
-  const agent = record.provider === 'claude' || record.provider === 'codex' ? record.provider : null
-  if (!agent) {
-    return null
+const exists = (path: string) => access(path).then(() => true, () => false)
+
+/** A Claude session's transcript: in its checkout's folder, else in any project folder, as for a session started in a subfolder. */
+async function claudeTranscript(sessionId: string, cwd: string): Promise<string | null> {
+  const root = join(homedir(), '.claude', 'projects')
+  const direct = join(root, claudeFolder(cwd), `${sessionId}.jsonl`)
+  if (await exists(direct)) {
+    return direct
   }
-  const handle = [...(record.providerHandleChain ?? [])].reverse().find((link) => link.handle?.sessionId || link.handle?.threadId)?.handle
-  const home = record.accountHome?.path ?? join(homedir(), agent === 'claude' ? '.claude' : '.codex')
-  const cwd = record.location?.workspaceId?.split('::')[1]
-  const transcript = agent === 'claude' && handle?.sessionId && cwd ? join(home, 'projects', claudeFolder(cwd), `${handle.sessionId}.jsonl`) : null
-  return {
-    agent,
-    transcript,
-    model: record.options?.model ?? null,
-    effort: record.options?.effort ?? null,
-    codexThread: agent === 'codex' ? (handle?.threadId ?? null) : null,
-    createdAt: record.createdAt ?? 0
+  for (const folder of await readdir(root).catch(() => [] as string[])) {
+    const path = join(root, folder, `${sessionId}.jsonl`)
+    if (await exists(path)) {
+      return path
+    }
   }
+  return null
 }
 
-/** A Codex thread's rollout file: Codex files it under the day it started, in local time. */
-async function codexTranscript(thread: string, createdAt: number): Promise<string | null> {
+// How many days back from today to look for a Codex rollout: Codex files it under the day it started.
+const CODEX_DAYS = 60
+
+/** A Codex thread's rollout file, in the folder of the local day the thread started. */
+async function codexTranscript(thread: string, now = Date.now()): Promise<string | null> {
   const root = join(homedir(), '.codex', 'sessions')
   const day = 24 * 60 * 60 * 1000
-  for (const at of [createdAt, createdAt - day, createdAt + day]) {
-    const date = new Date(at)
+  for (let back = -1; back <= CODEX_DAYS; back++) {
+    const date = new Date(now - back * day)
     const folder = join(root, String(date.getFullYear()), String(date.getMonth() + 1).padStart(2, '0'), String(date.getDate()).padStart(2, '0'))
     const name = (await readdir(folder).catch(() => [] as string[])).find((file) => file.endsWith(`-${thread}.jsonl`))
     if (name) {
@@ -46,6 +49,79 @@ async function codexTranscript(thread: string, createdAt: number): Promise<strin
     }
   }
   return null
+}
+
+/** Text with JSON's escaped line breaks and tabs, and every run of white space, as one space. */
+export const flattened = (text: string) => text.replace(/\\[nrt]/g, ' ').replace(/\s+/g, ' ')
+
+/** A run of a reply that its flattened transcript line holds as written: no quote or backslash, which JSON escapes. */
+export function replySnippet(reply: string): string | null {
+  return /[^"\\]{24,80}/.exec(flattened(reply).trim())?.[0] ?? null
+}
+
+// How many of a checkout's newest transcripts, and how much of each one's end, to search for a reply.
+const REPLY_FILES = 15
+const REPLY_TAIL_BYTES = 512 * 1024
+
+async function tailOf(path: string, size: number): Promise<string> {
+  const file = await open(path, 'r')
+  try {
+    const length = Math.min(size, REPLY_TAIL_BYTES)
+    const buffer = Buffer.alloc(length)
+    await file.read(buffer, 0, length, size - length)
+    return buffer.toString('utf8')
+  } finally {
+    await file.close()
+  }
+}
+
+/**
+ * A Claude transcript in the checkout's folder whose end holds the agent's last reply, the newest
+ * first: for a pane Orca gives no session id.
+ */
+async function claudeTranscriptByReply(cwd: string, reply: string): Promise<string | null> {
+  const snippet = replySnippet(reply)
+  if (!snippet) {
+    return null
+  }
+  const folder = join(homedir(), '.claude', 'projects', claudeFolder(cwd))
+  const names = (await readdir(folder).catch(() => [] as string[])).filter((name) => name.endsWith('.jsonl'))
+  const found = await Promise.all(names.map(async (name) => ({ path: join(folder, name), info: await stat(join(folder, name)).catch(() => null) })))
+  const files = found
+    .flatMap((file) => (file.info ? [{ path: file.path, size: file.info.size, at: file.info.mtimeMs }] : []))
+    .sort((x, y) => y.at - x.at)
+    .slice(0, REPLY_FILES)
+  for (const file of files) {
+    if (flattened(await tailOf(file.path, file.size).catch(() => '')).includes(snippet)) {
+      return file.path
+    }
+  }
+  return null
+}
+
+/** Transcripts found, by agent and session id, or by pane and reply for a pane without an id. */
+const transcripts = new Map<string, string>()
+
+/** A session's transcript, and the session id it is named after. */
+async function transcriptOf(key: string, session: AgentSession): Promise<{ path: string; sessionId: string } | null> {
+  const id = session.sessionId ? `${session.agent}:${session.sessionId}` : `${key}:${session.reply}`
+  let path = transcripts.get(id) ?? null
+  if (!path) {
+    if (session.agent === 'claude') {
+      path = session.sessionId
+        ? await claudeTranscript(session.sessionId, session.path)
+        : session.reply
+          ? await claudeTranscriptByReply(session.path, session.reply)
+          : null
+    } else if (session.agent === 'codex' && session.sessionId) {
+      path = await codexTranscript(session.sessionId)
+    }
+    if (path) {
+      transcripts.set(id, path)
+    }
+  }
+  const name = path?.split('/').pop()?.replace(/\.jsonl$/, '') ?? ''
+  return path ? { path, sessionId: session.sessionId ?? name } : null
 }
 
 /** A transcript line, as far as the tally reads it. */
@@ -56,6 +132,9 @@ type Row = {
   isMeta?: boolean
   isCompactSummary?: boolean
   timestamp?: string
+  compactMetadata?: { postTokens?: unknown }
+  /** The effort a Claude reply ran at. */
+  effort?: unknown
   message?: { id?: string; model?: string; usage?: Record<string, unknown>; content?: unknown }
   payload?: Record<string, unknown>
 }
@@ -136,12 +215,13 @@ export class Tally {
     this.turnsSinceCompaction += 1
   }
 
-  /** A compaction empties the context: its size stays unknown until the agent's next reply. */
+  /** A compaction shrinks the context to the size Claude records, else to unknown until the agent's next reply. */
   private compaction(row: Row): void {
     this.compactions += 1
     this.turnsSinceCompaction = 0
     this.toolCallsAtCompaction = this.toolCalls
-    this.setContext(null, row)
+    const after = row.compactMetadata?.postTokens
+    this.setContext(typeof after === 'number' && after > 0 ? after : null, row)
   }
 
   private setContext(tokens: number | null, row: Row): void {
@@ -175,6 +255,9 @@ export class Tally {
   }
 
   private claudeRow(row: Row): void {
+    if (row.type === 'assistant' && !row.isSidechain && typeof row.effort === 'string' && row.effort) {
+      this.effort = row.effort
+    }
     if (row.type === 'system' && row.subtype === 'compact_boundary' && !row.isSidechain) {
       this.compaction(row)
     } else if (claudePrompt(row)) {
@@ -250,25 +333,6 @@ export class Tally {
   }
 }
 
-/**
- * Claude's context window, which its transcript does not record: 1M from the 4.6 models on and for
- * `[1m]` ids, 200k before. Null for a model this cannot tell.
- */
-export function claudeWindow(model: string): number | null {
-  if (model.includes('[1m]')) {
-    return 1_000_000
-  }
-  const version = /^claude-(?:opus|sonnet|haiku|fable|mythos)-(\d+)(?:-(\d{1,2}))?(?:-|\[|$)/.exec(model)
-  if (!version) {
-    return null
-  }
-  const [major, minor] = [Number(version[1]), Number(version[2] ?? 0)]
-  if (model.startsWith('claude-haiku-4')) {
-    return 200_000
-  }
-  return major > 4 || (major === 4 && minor >= 6) ? 1_000_000 : 200_000
-}
-
 function parse<T>(line: string): T | null {
   try {
     return JSON.parse(line) as T
@@ -328,57 +392,39 @@ async function tallyOf(path: string): Promise<Tally | null> {
   return current.offset ? current.tally : null
 }
 
-/**
- * The tokens in a session's context now: the transcript's last reading, unless Orca's report is
- * newer, as it is after a compaction. Null when neither knows.
- */
-export function currentContext(tally: { context: number | null; contextAt: number } | null, report: ContextReport | undefined): number | null {
-  if (report?.used != null && (!tally || report.at >= tally.contextAt)) {
-    return report.used
-  }
-  return tally?.context ?? null
-}
-
-/** Model, effort, tokens and context use for each session key that can be traced to a transcript or record. */
-export async function sessionUsage(keys: string[]): Promise<Record<string, SessionUsage>> {
-  const hooks = await hookStatus()
-  const chatIds = new Map(keys.flatMap((key) => {
-    const id = chatSessionId(key)
-    return id ? [[key, id] as [string, string]] : []
-  }))
-  const ids = [...new Set(chatIds.values())]
-  const store = sessionStore()
-  const [records, reports] = await Promise.all([chatRecords(ids, store), contextReports(ids, store)])
+/** Model, effort, tokens and context use for each session key whose transcript can be found. */
+export async function sessionUsage(orca: OrcaWorkerApi, keys: string[]): Promise<Record<string, SessionUsage>> {
+  const sessions = await agentSessions(orca, await listWorkspaces(), keys)
+  const launches = [...sessions.values()].some((s) => s.agent === 'claude') ? await liveLaunches() : new Map()
+  // One read of a checkout's settings files per refresh.
+  const settings = new Map<string, Promise<ClaudeSettings[]>>()
+  const settingsOf = (path: string) => settings.get(path) ?? settings.set(path, settingsFor(path)).get(path)!
   const results = await Promise.all(
     keys.map(async (key): Promise<[string, SessionUsage] | null> => {
-      const id = chatIds.get(key)
-      const record = id ? records.get(id) : undefined
-      const chat = record ? chatSource(record) : null
-      const source: Source | undefined = chat ?? hooks.get(key)
-      if (!source) {
+      const session = sessions.get(key)
+      const transcript = session ? await transcriptOf(key, session) : null
+      const tally = transcript ? await tallyOf(transcript.path) : null
+      if (!session || !transcript || !tally) {
         return null
       }
-      const transcript = chat?.codexThread ? await codexTranscript(chat.codexThread, chat.createdAt) : source.transcript
-      const tally = transcript ? await tallyOf(transcript) : null
-      const model = tally?.model ?? source.model
-      const report = id ? reports.get(id) : undefined
+      const model = tally.model
+      const claude = session.agent === 'claude' ? { launch: launches.get(transcript.sessionId) ?? NO_LAUNCH, files: await settingsOf(session.path) } : null
       return [
         key,
         {
           model,
-          // Codex records the effort each turn ran at; Claude's comes from Orca.
-          effort: tally?.effort ?? source.effort,
-          tokens: tally?.tokens ?? null,
-          tokenSplit: tally?.tokenSplit ?? null,
-          context: currentContext(tally, report),
-          // Codex records its window; else Orca's last report; else Claude's usual window for the model.
-          contextWindow:
-            tally?.contextWindow ?? report?.window ?? (source.agent === 'claude' && model ? claudeWindow(model) : null),
-          turns: tally?.turns ?? null,
-          turnsSinceCompaction: tally?.turnsSinceCompaction ?? null,
-          compactions: tally?.compactions ?? null,
-          toolCalls: tally?.toolCalls ?? null,
-          toolCallsSinceCompaction: tally?.toolCallsSinceCompaction ?? null
+          // Both agents record the effort each turn ran at; an older Claude transcript leaves it to its flag or settings.
+          effort: tally.effort ?? (claude ? effortOf(model, claude.launch, claude.files) : null),
+          tokens: tally.tokens,
+          tokenSplit: tally.tokenSplit,
+          context: tally.context,
+          // Codex records its window; Claude's is worked out as Claude Code does.
+          contextWindow: tally.contextWindow ?? (claude && model ? contextWindow(model, claude.launch, claude.files) : null),
+          turns: tally.turns,
+          turnsSinceCompaction: tally.turnsSinceCompaction,
+          compactions: tally.compactions,
+          toolCalls: tally.toolCalls,
+          toolCallsSinceCompaction: tally.toolCallsSinceCompaction
         }
       ]
     })

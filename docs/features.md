@@ -12,11 +12,11 @@ The project, workspace and session Orca shows are in normal text, the rest muted
 ### Session details
 
 Open any session to see what it is doing and how much it has used.
-Usage appears where recorded by Claude, Codex or Orca.
+Usage appears where recorded in the Claude or Codex transcript.
 
-- **Model and effort**: the latest recorded model and reasoning effort, where available. Fable and Astra model names show in the warning colour.
+- **Model and effort**: the latest recorded model and reasoning effort. Fable and Astra model names show in the warning colour.
 - **Tokens**: the total tokens the session has used.
-- **Context**: how full the context window is, as used and total size.
+- **Context**: how full the context window is, as used and total size. A Claude window is the size Claude Code compacts at, from its settings.
 - **Turns and tool calls**: your prompts and the agent's tool calls, since the last compaction and in total. More than 20 turns since the last compaction show in the warning colour, more than 35 in red. Before the first compaction, the colours apply to total turns.
 - **Compactions**: how often the conversation has been compacted.
 - **Branch**: the workspace’s current Git branch.
@@ -32,9 +32,9 @@ Usage appears where recorded by Claude, Codex or Orca.
 
 ### Compact your sessions directly
 
-Press **Compact** in a session's details to compact its conversation without switching to it. The button is disabled while the agent is working; it does not queue a compact.
+Press **Compact** in a terminal session's details to compact its conversation without switching to it. Chats have no Compact button, since Orca offers plugins no way to compact one. The button is disabled while the agent is working; it does not queue a compact.
 
-> **Use with caution.** Pressing Compact runs `/compact`, or its equivalent, in the session right away.
+> **Use with caution.** Pressing Compact sends `/compact` to the session right away.
 
 | Dark | Light |
 | --- | --- |

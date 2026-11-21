@@ -3,7 +3,7 @@
   "id": "power-sessions",
   "name": "Power Sessions",
   "version": "0.1.6",
-  "description": "See what every Claude and Codex agent is doing and how much it has used, compact long chats, and run your dev scripts.",
+  "description": "See what every Claude and Codex agent is doing and how much it has used, compact long terminal sessions, and run your dev scripts.",
   "author": {
     "name": "rr235",
     "url": "https://github.com/rr235"
@@ -48,7 +48,7 @@
     }
   ],
   "engines": {
-    "orca": ">=1.4.248"
+    "orca": ">=1.4.268"
   },
   "execution": "trusted-worker",
   "pluginApi": 1,

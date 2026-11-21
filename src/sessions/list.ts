@@ -2,7 +2,6 @@
 // the tests feed it fixtures.
 import { listProjects, listRepos, listWorkspaces } from '../orca/commands'
 import { result } from '../orca/json'
-import { tabPositions } from '../orca/stores'
 import type { AgentState, Project, PullRequest, Session } from '../protocol'
 
 type ProjectRow = {
@@ -170,18 +169,15 @@ export function workspaceRanks(psJson: string): Map<string, number> {
 }
 
 /**
- * Sessions in the order of Orca's sidebar: by their workspace's place (`ranks`), then by the
- * position of their tab (`positions`, by tab id, the pane key before its `:`). Orca stores
- * positions for chat tabs only, so sessions without one follow, in the order given. Within a
- * workspace the sidebar lists agents by when it first saw each, which Orca keeps in its window
- * only; tab position is the nearest order Orca saves.
+ * Sessions in the order of Orca's sidebar: by their workspace's place (`ranks`), then in the order
+ * given. Within a workspace the sidebar lists agents by when it first saw each, which Orca keeps in
+ * its window only.
  */
-export function orderLikeSidebar(sessions: Session[], ranks: Map<string, number>, positions: Map<string, number>): Session[] {
+export function orderLikeSidebar(sessions: Session[], ranks: Map<string, number>): Session[] {
   const place = (session: Session) => ranks.get(session.worktreeId) ?? Number.POSITIVE_INFINITY
-  const position = (session: Session) => positions.get(session.key.split(':')[0]) ?? Number.POSITIVE_INFINITY
   return sessions
     .map((session, index) => ({ session, index }))
-    .sort((a, b) => place(a.session) - place(b.session) || position(a.session) - position(b.session) || a.index - b.index)
+    .sort((a, b) => place(a.session) - place(b.session) || a.index - b.index)
     .map(({ session }) => session)
 }
 
@@ -223,7 +219,7 @@ export async function readSessions(): Promise<SessionsOutput> {
 /** The sessions, in the order of Orca's sidebar, and the projects with their agent counts. */
 export async function sessionsOf({ projectsJson, reposJson, workspacesJson }: SessionsOutput): Promise<{ sessions: Session[]; projects: Project[] }> {
   const parsed = parseSessions(workspacesJson, projectsJson)
-  const sessions = orderLikeSidebar(parsed, workspaceRanks(workspacesJson), await tabPositions(parsed.map((s) => s.key.split(':')[0])))
+  const sessions = orderLikeSidebar(parsed, workspaceRanks(workspacesJson))
   return { sessions, projects: parseProjects(projectsJson, reposJson, sessions) }
 }
 

@@ -12,7 +12,7 @@ The code is grouped by what it does:
 
 Four rules, guarded by `src/structure.test.ts`:
 
-1. Only `src/orca/` knows how to reach Orca: its CLI, runtime client and files. `gh`, `lsof` and `ps` run through `src/cli.ts` from the feature that needs them.
+1. Only `src/orca/` knows how to reach Orca, through its CLI and plugin host API; nothing reads Orca's own files or calls its runtime client. `gh`, `lsof` and `ps` run through `src/cli.ts` from the feature that needs them.
 2. `src/sessions/` and `src/actions/` never import each other; `src/worker.ts` composes them.
 3. Panel code imports only `orca`, `src/protocol.ts`, `src/shared.ts` and itself.
 4. One name: quick action.

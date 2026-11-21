@@ -41,13 +41,12 @@ test('lists live sessions by title, sleeping workspaces included', () => {
   )
 })
 
-test('orders sessions like Orca\'s sidebar, by workspace and then tab position', () => {
+test('orders sessions like Orca\'s sidebar, by workspace, its sessions in the order given', () => {
   const sessions = parseSessions(PS, PROJECTS)
-  // Within a workspace, `b` has no stored position, so it follows `a`.
-  assert.deepEqual(orderLikeSidebar(sessions, new Map(), new Map([['a', 2]])).map((s) => s.key), ['a', 'b', 'd'])
+  assert.deepEqual(orderLikeSidebar(sessions, new Map()).map((s) => s.key), ['b', 'a', 'd'])
   // The newer workspace comes first, its sessions together.
   const ranks = new Map([['r-x::/c/x', 0], ['r-blog::/c/blog', 1]])
-  assert.deepEqual(orderLikeSidebar(sessions, ranks, new Map([['a', 2], ['b', 5]])).map((s) => s.key), ['d', 'a', 'b'])
+  assert.deepEqual(orderLikeSidebar(sessions, ranks).map((s) => s.key), ['d', 'b', 'a'])
   // The highest manual order, else sort order, first; a tie by name; a workspace with neither last.
   const ps = JSON.stringify({
     result: {

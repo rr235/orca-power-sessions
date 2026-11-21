@@ -1,42 +1,42 @@
 // What the panel asks of a session or a workspace: compact a session, focus its tab, read the
-// selected tab, and open a workspace.
+// workspace on screen, and open a workspace.
 import type { OrcaWorkerApi } from 'orca/worker'
-import { launchAgent, listTerminals, newTabAgent, sendToTerminal } from '../orca/commands'
-import { compactChat, focusTab, selectedTab, tabCount } from '../orca/runtime'
+import { activeWorkspace, hasOpenTabs } from '../orca/agents'
+import { launchAgent, listTerminals, listWorkspaces, newTabAgent, sendToTerminal, switchTerminal } from '../orca/commands'
 import { terminalOfPane } from '../orca/terminals'
 import { folderOf, show, showWorkspace } from '../orca/workspaces'
-import { chatSessionId } from '../shared'
+import type { Selected } from '../protocol'
 
 export function sessionCommands(orca: OrcaWorkerApi) {
+  /** Runs /compact in a terminal agent. Orca offers no way to run it in a chat. */
   async function compact(key: string): Promise<null> {
     const terminal = terminalOfPane(await listTerminals(), key)
+    if (!terminal) {
+      throw Object.assign(new Error('Only a terminal session can be compacted from here.'), { code: 'invalid_params' })
+    }
+    await sendToTerminal(terminal, '/compact')
+    return null
+  }
+
+  /** Shows the session's workspace, then its terminal; a chat's tab cannot be chosen, so its workspace shows. */
+  async function focus(key: string, path: string): Promise<null> {
+    await showWorkspace(orca, path)
+    const terminal = terminalOfPane(await listTerminals(), key)
     if (terminal) {
-      await sendToTerminal(terminal, '/compact')
-      return null
-    }
-    const chat = chatSessionId(key)
-    if (!chat) {
-      throw Object.assign(new Error('This session has neither a terminal nor a chat to compact.'), { code: 'invalid_params' })
-    }
-    try {
-      await compactChat(chat)
-    } catch (error) {
-      orca.log(`compact ${chat}: ${(error as Error).message}`)
-      throw error
+      try {
+        await switchTerminal(terminal)
+      } catch (error) {
+        orca.log(`focus ${key}: ${(error as Error).message}`)
+        throw error
+      }
     }
     return null
   }
 
-  async function focus(key: string, path: string): Promise<null> {
-    // Orca focuses a tab only in the workspace on screen, so show the workspace first.
-    const workspace = await showWorkspace(orca, path)
-    try {
-      await focusTab(workspace, key)
-    } catch (error) {
-      orca.log(`focus ${key}: ${(error as Error).message}`)
-      throw error
-    }
-    return null
+  /** The workspace Orca's window shows. Orca does not say which of its tabs is on screen. */
+  async function selected(): Promise<Selected | null> {
+    const worktreeId = activeWorkspace(await listWorkspaces())
+    return worktreeId ? { worktreeId, key: null } : null
   }
 
   /**
@@ -46,7 +46,7 @@ export function sessionCommands(orca: OrcaWorkerApi) {
   async function openWorkspace(path: string): Promise<null> {
     const folder = await folderOf(orca, path)
     const workspace = folder ?? `path:${path}`
-    if ((await tabCount(workspace)) === 0) {
+    if (hasOpenTabs(await listWorkspaces(), path) === false) {
       const agent = await newTabAgent()
       if (agent) {
         try {
@@ -76,5 +76,5 @@ export function sessionCommands(orca: OrcaWorkerApi) {
     })
   }
 
-  return { compact, focus, selected: selectedTab, open }
+  return { compact, focus, selected, open }
 }
