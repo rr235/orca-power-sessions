@@ -98,6 +98,27 @@ test('quick actions show startup, completion and failure, and stop polling when 
   }
 })
 
+test('a closed session disappears on a workspace report before any timer advances', async () => {
+  mock.timers.enable({ apis: ['setTimeout', 'setInterval'] })
+  let sessions = DEMO.sessions
+  const host = mockHost({ requests: {
+    'overview.load': () => ({ ...DEMO, sessions }),
+    'session.selected': () => null
+  } })
+  const view = await mount(panel, { host })
+  const report = { context: { workspaceId: 'wt_a', branch: 'main', displayName: 'Workspace A', terminals: [{ id: 't1' }] } }
+  try {
+    await view.emit('workspace.changed', report)
+    assert.ok(view.find({ text: sessions[0].title }))
+    sessions = sessions.slice(1)
+    await view.emit('workspace.changed', report)
+    assert.equal(view.find({ text: DEMO.sessions[0].title }), null, 'the close can still list the terminal')
+  } finally {
+    await view.unmount()
+    mock.timers.reset()
+  }
+})
+
 test('a slow command refresh completes without overlapping polls', async () => {
   mock.timers.enable({ apis: ['setTimeout', 'setInterval'] })
   let loads = 0

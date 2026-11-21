@@ -1,6 +1,6 @@
 // The panel's state: what it last read from the worker, what is open, pinned and busy, and the
 // reads that keep it current. One copy per panel, so every component reads the same atoms.
-import { atom, plugin, read, set, storage, update, type PanelContext } from 'orca'
+import { atom, plugin, read, set, storage, update, type OrcaEvents, type PanelContext } from 'orca'
 import type { ActionStatus, Overview, PullRequestInfo, Selected, SessionUsage } from '../protocol'
 import { watchQuickActions } from './quick-action-polling'
 
@@ -145,9 +145,27 @@ export function loadSoon(): void {
   }, EVENT_DELAY_MS)
 }
 
+// The focused workspace as Orca last reported it; null before the first report.
+let focusedWorkspace: { id?: string } | null = null
+
+/**
+ * Reloads on any change in the focused workspace, as a terminal closing there can end a session.
+ * Orca reports a close about 0.3 s after it, while the closed terminal is still listed, and again
+ * about 2 s later without it, so the terminal list cannot tell a close apart. It reads at once: a
+ * panel in the background can hold a timer for a second, and the later report reads again. The
+ * first report and a workspace switch do not reload.
+ */
+export function workspaceChanged({ context }: OrcaEvents['workspace.changed']): void {
+  if (focusedWorkspace && context && focusedWorkspace.id === context.workspaceId) {
+    void load()
+  }
+  focusedWorkspace = context ? { id: context.workspaceId } : null
+}
+
 /** Ends this panel run's reads: a press's hold is this run's, and the next run reads Orca afresh. */
 export function endPanelRun(): void {
   selectedHeldUntil = 0
+  focusedWorkspace = null
   ++loadSeq
   if (eventTimer) {
     clearTimeout(eventTimer)

@@ -30,7 +30,8 @@ import {
   toggleFavourites,
   toggleProjectsWithSessionsOnly,
   toggleSessions,
-  watchActions
+  watchActions,
+  workspaceChanged
 } from './panel/state'
 
 export function setup(ctx: PanelContext): () => void {
@@ -38,7 +39,8 @@ export function setup(ctx: PanelContext): () => void {
   ctx.subscriptions.push(
     on('agent.status.changed', loadSoon),
     on('workspace.created', loadSoon),
-    on('workspace.removed', loadSoon)
+    on('workspace.removed', loadSoon),
+    on('workspace.changed', workspaceChanged)
   )
   const timer = setInterval(() => {
     if (read(ctx.visible)) {
