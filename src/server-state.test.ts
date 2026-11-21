@@ -1,14 +1,14 @@
 // The ownership policy uses observed values directly, without recreating the process probe.
 import { assert, test } from 'orca/testing'
-import { actionTerminals, commandRunning, serverState, startStep, terminalTitle, watchServers } from './servers'
-import type { ServerObservation } from './servers'
+import { actionTerminals, commandRunning, runState, runStates, startStep, terminalTitle } from './servers'
+import type { RunObservation } from './servers'
 
 const KB = { id: 'kb', name: 'Knowledge Base', path: '/c/kb', url: 'http://localhost:3410' }
 const KNOWN = { kb: 'term_kb' }
 const terminalList = (...rows: object[]) => JSON.stringify({ result: { terminals: rows } })
 const KB_TERMINAL = { handle: 'term_kb', title: 'bun', worktreePath: '/c/kb', tabId: 'tab1', leafId: 'leaf1', connected: true }
-const STOPPED: ServerObservation = { serving: null, inFolder: false, commandRunning: false }
-const SERVING: ServerObservation = { serving: 'term_kb', inFolder: true, commandRunning: true }
+const STOPPED: RunObservation = { serving: null, inFolder: false, commandRunning: false }
+const SERVING: RunObservation = { serving: 'term_kb', inFolder: true, commandRunning: true }
 
 test('finds the watched terminal by handle or title and remembers when it closed', () => {
   assert.deepEqual(actionTerminals([KB], terminalList(KB_TERMINAL), KNOWN), KNOWN)
@@ -28,31 +28,31 @@ for (const [name, observed, up] of [
   ['ownership is unreadable while another command runs', { ...STOPPED, commandRunning: true }, false]
 ] as const) {
   test(name, () => {
-    assert.deepEqual(serverState(KB, KNOWN, observed), { up, terminal: 'term_kb' })
+    assert.deepEqual(runState(KB, KNOWN, observed), { up, terminal: 'term_kb' })
   })
 }
 
 test('a closed watched terminal cannot be replaced by another service on the port', () => {
   const closed = actionTerminals([KB], terminalList(), KNOWN)
-  const state = serverState(KB, closed, { ...SERVING, serving: 'term_other' })
+  const state = runState(KB, closed, { ...SERVING, serving: 'term_other' })
   assert.deepEqual(state, { up: false, terminal: null }, 'Stop has no terminal to close')
   assert.equal(startStep(state, null, false), 'create')
 })
 
 test('keeps a manually discovered terminal through server exit and port takeover', () => {
-  const first = watchServers([KB], {}, [SERVING])
+  const first = runStates([KB], {}, [SERVING])
   assert.deepEqual(first.states, [{ up: true, terminal: 'term_kb' }])
-  const killed = watchServers([KB], first.terminals, [STOPPED])
+  const killed = runStates([KB], first.terminals, [STOPPED])
   assert.deepEqual(killed.states, [{ up: false, terminal: 'term_kb' }], 'Stop retains its target')
   assert.equal(startStep(killed.states[0], killed.terminals.kb, false), 'rerun')
-  const takeover = watchServers([KB], killed.terminals, [{ ...SERVING, serving: 'term_other' }])
+  const takeover = runStates([KB], killed.terminals, [{ ...SERVING, serving: 'term_other' }])
   assert.deepEqual(takeover.states, killed.states, 'another listener cannot replace its terminal')
 })
 
 test('adopts only unclaimed project terminals and reserves each one for one action', () => {
-  assert.deepEqual(serverState(KB, {}, { ...SERVING, inFolder: false }), { up: false, terminal: null })
-  assert.deepEqual(serverState(KB, { docs: 'term_kb' }, SERVING), { up: false, terminal: null })
-  const watched = watchServers([KB, { ...KB, id: 'docs' }], {}, [SERVING, SERVING])
+  assert.deepEqual(runState(KB, {}, { ...SERVING, inFolder: false }), { up: false, terminal: null })
+  assert.deepEqual(runState(KB, { docs: 'term_kb' }, SERVING), { up: false, terminal: null })
+  const watched = runStates([KB, { ...KB, id: 'docs' }], {}, [SERVING, SERVING])
   assert.deepEqual(watched.states, [{ up: true, terminal: 'term_kb' }, { up: false, terminal: null }])
   assert.deepEqual(watched.terminals, KNOWN)
 })
@@ -65,9 +65,9 @@ test('Run shows a busy terminal and reruns only at its prompt', () => {
 
 test('before a URL is known, only a foreground command in its live terminal runs', () => {
   const unknown = { ...KB, url: null }
-  assert.deepEqual(serverState(unknown, KNOWN, SERVING), { up: true, terminal: 'term_kb' })
-  assert.deepEqual(serverState(unknown, KNOWN, STOPPED), { up: false, terminal: 'term_kb' })
-  assert.deepEqual(serverState(unknown, { kb: null }, SERVING), { up: false, terminal: null })
+  assert.deepEqual(runState(unknown, KNOWN, SERVING), { up: true, terminal: 'term_kb' })
+  assert.deepEqual(runState(unknown, KNOWN, STOPPED), { up: false, terminal: 'term_kb' })
+  assert.deepEqual(runState(unknown, { kb: null }, SERVING), { up: false, terminal: null })
 })
 
 test('reads foreground commands from the process list, excluding shells and prompt helpers', () => {

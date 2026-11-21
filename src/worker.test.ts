@@ -167,7 +167,7 @@ test('lists projects in Orca order with paths and live agent counts', () => {
   )
 })
 
-test('finds server terminals by handle or title', () => {
+test('finds quick action terminals by handle or title', () => {
   const a = { id: 'a', name: 'Dev' }
   const b = { id: 'b', name: 'Dev' }
   const terminals = JSON.stringify({

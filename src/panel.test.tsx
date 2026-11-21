@@ -81,7 +81,7 @@ test('quick actions show startup, completion and failure, and stop polling when 
     assert.ok(view.find({ label: 'Run Sync' }))
     const idle = loads
     await tick(2000)
-    assert.equal(loads, idle, 'address-based servers keep the normal cycle')
+    assert.equal(loads, idle, 'address-based actions keep the normal cycle')
     fail = true
     await view.press({ label: 'Run Sync' })
     assert.ok(view.find({ label: 'Run Sync' }))
@@ -123,7 +123,7 @@ test('a slow command refresh completes without overlapping polls', async () => {
   }
 })
 
-test('shows servers, sessions and projects, and starts a server', async () => {
+test('shows quick actions, sessions and projects, and starts an action', async () => {
   const started: string[] = []
   const compacted: string[] = []
   const focused: string[] = []
@@ -155,7 +155,7 @@ test('shows servers, sessions and projects, and starts a server', async () => {
     }
     await view.press(view.find({ label: 'Run Primer' }) as never)
     assert.deepEqual(started, ['primer'])
-    // A running server ends with its terminal, then open, then a green dot; open goes to the default browser.
+    // A running action ends with its terminal, then open, then a green dot; open goes to the default browser.
     const terminal = view.find({ label: 'Show Platform terminal' })
     const open = view.find({ label: 'Open Platform' })
     assert.ok(terminal && open && terminal.path < open.path, `terminal before open: ${terminal?.path} ${open?.path}`)
@@ -594,7 +594,7 @@ test('edits, adds and deletes quick actions', async () => {
   })
   const view = await mount(panel, { host })
   const nameInput = () => view.find({ type: 'Input', label: 'Name' } as never)
-  // Editing hides nothing: the sessions and the servers stay, under the same titles.
+  // Editing hides nothing: the sessions and the actions stay, under the same titles.
   const allInView = () => {
     // Sessions and Quick actions each have a pressable header of the panel's own, Quick actions at the bottom.
     assert.equal(view.find({ type: 'Collapsible' }), null)
@@ -603,7 +603,7 @@ test('edits, adds and deletes quick actions', async () => {
     assert.ok(sessions && quick && sessions.path < quick.path, 'Sessions above Quick actions')
     const line = view.findAll({ type: 'Separator' } as never).filter((s) => s.path < quick.path && !quick.path.startsWith(s.path))
     assert.ok(line.some((s) => s.path > sessions.path), 'a separator between Sessions and Quick actions')
-    assert.ok(view.find({ label: 'Run Primer' }), 'the servers stay')
+    assert.ok(view.find({ label: 'Run Primer' }), 'the actions stay')
     assert.ok(view.find({ text: 'Onboarding checklist for new tenants' }), 'the sessions stay')
   }
   try {
@@ -616,7 +616,7 @@ test('edits, adds and deletes quick actions', async () => {
     assert.ok(headerDot(), 'Platform runs, so the header has a green dot')
     await view.press(header() as never)
     assert.equal(header()?.props.icon, 'next', 'closed: the arrow points right')
-    assert.equal(view.find({ label: 'Run Primer' }), null, 'closed: no servers')
+    assert.equal(view.find({ label: 'Run Primer' }), null, 'closed: no actions')
     assert.ok(view.findAll({ type: 'Text', text: '●' }).some((d) => d.props.tone === 'success' && d.path > (header()?.path ?? '')), 'the dot stays while closed')
     await view.press(header() as never)
     allInView()
@@ -630,7 +630,7 @@ test('edits, adds and deletes quick actions', async () => {
     assert.ok(view.find({ label: 'Run Primer' }), 'Quick actions stay while Sessions is closed')
     await view.press(sessionsHeader() as never)
     allInView()
-    // Run comes first in a server's row.
+    // Run comes first in an action's row.
     const run = view.find({ label: 'Run Primer' })
     const primerName = view.find({ type: 'Text', text: 'Primer' })
     assert.ok(run && primerName && run.path < primerName.path, 'Run comes before the name')
@@ -639,10 +639,10 @@ test('edits, adds and deletes quick actions', async () => {
     const refreshButton = view.find({ type: 'IconButton', label: 'Refresh sessions' })
     assert.equal(refreshButton?.props.icon, 'refresh', 'a refresh icon')
     assert.equal(refreshButton?.props.size, 'xs')
-    // Add action sits under the servers, and opens its form right there.
+    // Add action sits under the actions, and opens its form right there.
     const addLine = view.find({ type: 'Text', text: 'Add action' })
-    const lastServer = view.find({ label: 'Run Blog' })
-    assert.ok(addLine && lastServer && lastServer.path < addLine.path, `Add action under the servers: ${lastServer?.path} ${addLine?.path}`)
+    const lastAction = view.find({ label: 'Run Blog' })
+    assert.ok(addLine && lastAction && lastAction.path < addLine.path, `Add action under the actions: ${lastAction?.path} ${addLine?.path}`)
     // Styled like Refresh sessions: muted text, then its plus button.
     assert.equal(view.find({ type: 'IconButton', label: 'Add action' })?.props.icon, 'add')
     assert.equal(view.find({ type: 'Text', text: 'Add action' })?.props.muted, true)
@@ -720,7 +720,7 @@ test('edits, adds and deletes quick actions', async () => {
     assert.equal(nameInput(), null, 'saving closes the form')
     saved.length = 0
 
-    // A stopped server's row ends with an edit button; a running one has none, and there is no Edit quick actions.
+    // A stopped action's row ends with an edit button; a running one has none, and there is no Edit quick actions.
     assert.equal(view.find({ label: 'Edit quick actions' }), null)
     assert.equal(view.find({ label: 'Edit Platform' }), null, 'Platform is running')
     const editPrimer = view.find({ label: 'Edit Primer' })

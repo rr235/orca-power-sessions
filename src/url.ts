@@ -1,5 +1,5 @@
 /**
- * A typed server address as the panel stores it: `localhost:3000` becomes `http://localhost:3000`,
+ * A typed quick action address as the panel stores it: `localhost:3000` becomes `http://localhost:3000`,
  * and a trailing slash goes. Null when it is not an http or https address. Shared by the panel,
  * which checks the form, and the worker, which saves it.
  */

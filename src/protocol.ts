@@ -1,4 +1,7 @@
 // The panel <-> worker contract, declared once: src/panel.tsx and src/worker.ts both read it.
+// Quick actions were once called servers. Kept for compatibility, do not rename: the `server.start`
+// and `server.stop` requests, the `servers` field of `Overview`, the storage keys `serverTerminals`
+// and `serverStarts`, and the terminal title from `terminalTitle`.
 
 /**
  * A quick action as the person edits it and the worker stores it: a dev server's `steps`, commands
@@ -24,11 +27,11 @@ export type QuickAction = {
 export type QuickActionInput = { id?: string; name: string; steps: string[]; projectId: string; url?: string }
 
 /**
- * A dev server the panel can start: `up` whether its listener belongs to the watched Orca terminal
+ * A quick action as the panel lists it: `up` whether its listener belongs to the watched Orca terminal
  * (before its address is known, whether a foreground command runs there). `terminal` is that
- * watched terminal while it is open. See `serverState` in servers.ts.
+ * watched terminal while it is open. See `runState` in servers.ts.
  */
-export type Server = {
+export type ActionStatus = {
   id: string
   name: string
   steps: string[]
@@ -114,20 +117,20 @@ export type SessionUsage = {
  */
 export type Selected = { worktreeId: string; tabId: string | null }
 
-export type Overview = { servers: Server[]; projects: Project[]; sessions: Session[] }
+export type Overview = { servers: ActionStatus[]; projects: Project[]; sessions: Session[] }
 
 declare module 'orca' {
   interface PluginRequests {
-    /** Servers with their terminals, projects and live agent sessions. */
+    /** Quick actions with their terminals, projects and live agent sessions. */
     'overview.load': { output: Overview }
     /** Model, effort, token and context use for these sessions, by session key; unknown sessions are left out. */
     'session.usage': { input: { keys: string[] }; output: Record<string, SessionUsage> }
     /** Title and state of these pull requests, by URL; ones `gh` cannot read are left out. */
     'pr.info': { input: { urls: string[] }; output: Record<string, PullRequestInfo> }
-    /** Runs the server's command, in its terminal when still open, else a new one; when the server
-     *  already answers, shows its terminal instead. */
+    /** Runs the quick action's command, in its terminal when still open, else a new one; when its dev
+     *  server already answers, shows its terminal instead. */
     'server.start': { input: { id: string }; output: null }
-    /** Stops the server's terminal. */
+    /** Stops the quick action's terminal. */
     'server.stop': { input: { id: string }; output: null }
     /** Adds a quick action, or changes the one with this `id`. */
     'action.save': { input: QuickActionInput; output: null }

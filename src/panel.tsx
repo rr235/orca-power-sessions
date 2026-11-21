@@ -1,4 +1,4 @@
-// The Power Sessions panel: dev server buttons on top, then every Orca project with its live agent
+// The Power Sessions panel: quick action buttons on top, then every Orca project with its live agent
 // sessions under it. No build step: Orca strips the types and compiles the JSX when it loads.
 import {
   atom,
@@ -26,7 +26,7 @@ import {
   type PanelContext
 } from 'orca'
 import { tabOfPane } from './overview'
-import type { Overview, Project, QuickActionInput, PullRequestInfo, Selected, Server, Session, SessionUsage } from './protocol'
+import type { Overview, Project, QuickActionInput, PullRequestInfo, Selected, ActionStatus, Session, SessionUsage } from './protocol'
 import { runCommand } from './servers'
 import { normalUrl } from './url'
 import { Icon, SessionDetails } from './session-details'
@@ -184,15 +184,15 @@ async function act(key: string, action: () => Promise<unknown>, failure: string 
 
 let actionPolling: ReturnType<typeof watchQuickActions>
 
-async function startServer(server: Server): Promise<void> {
-  await actionPolling.start(server.id, () =>
-    act(`server:${server.id}`, () => plugin.request('server.start', { id: server.id }, { timeoutMs: 40000 }), `Could not start ${server.name}.`)
+async function startAction(action: ActionStatus): Promise<void> {
+  await actionPolling.start(action.id, () =>
+    act(`run:${action.id}`, () => plugin.request('server.start', { id: action.id }, { timeoutMs: 40000 }), `Could not start ${action.name}.`)
   )
 }
 // Both open in the default browser; Orca allows it only from the press itself.
-const openServer = (server: Server) => void shell.openExternal(server.url as string)
-const stopServer = (server: Server) =>
-  act(`server:${server.id}`, () => plugin.request('server.stop', { id: server.id }), `Could not stop ${server.name}.`)
+const openAction = (action: ActionStatus) => void shell.openExternal(action.url as string)
+const stopAction = (action: ActionStatus) =>
+  act(`run:${action.id}`, () => plugin.request('server.stop', { id: action.id }), `Could not stop ${action.name}.`)
 const openProject = (project: Project) =>
   project.path
     ? act(`open:${project.id}`, () => plugin.request('project.open', { path: project.path as string }, { timeoutMs: 50000 }), `Could not open ${project.name}.`)
@@ -262,10 +262,10 @@ const compactSession = (session: Session) =>
   )
 
 /** Opens the form for an action, or for a new one. */
-function editAction(server: Server | null): void {
-  set(draft, { name: server?.name ?? '', steps: server?.steps ?? [''], projectId: server?.projectId ?? '', url: server?.url ?? '' })
+function editAction(action: ActionStatus | null): void {
+  set(draft, { name: action?.name ?? '', steps: action?.steps ?? [''], projectId: action?.projectId ?? '', url: action?.url ?? '' })
   set(formError, null)
-  set(editing, server?.id ?? NEW_ACTION)
+  set(editing, action?.id ?? NEW_ACTION)
 }
 
 /** What is missing before the form can be saved, or null. */
@@ -356,27 +356,27 @@ export function setup(ctx: PanelContext): () => void {
 }
 
 
-function ServerCard({ server }: { server: Server }) {
-  const pending = Boolean(read(busy)[`server:${server.id}`])
-  const ours = Boolean(server.terminal)
-  const editingThis = read(editing) === server.id
-  // Run and Stop share the first slot; a server with no Orca terminal to close, such as one under pm2 or an agent, has nothing to stop.
-  // Between Run and the server showing as running, Stop shows disabled.
-  const control = !server.up && read(startingActions)[server.id] ? (
-    <IconButton icon="stop" label={`Stop ${server.name}`} tooltip="Starting" size="xs" variant="ghost" disabled onPress={() => undefined} />
-  ) : !server.up ? (
+function ActionCard({ action }: { action: ActionStatus }) {
+  const pending = Boolean(read(busy)[`run:${action.id}`])
+  const ours = Boolean(action.terminal)
+  const editingThis = read(editing) === action.id
+  // Run and Stop share the first slot; an action with no Orca terminal to close, such as a dev server under pm2 or an agent, has nothing to stop.
+  // Between Run and the action showing as running, Stop shows disabled.
+  const control = !action.up && read(startingActions)[action.id] ? (
+    <IconButton icon="stop" label={`Stop ${action.name}`} tooltip="Starting" size="xs" variant="ghost" disabled onPress={() => undefined} />
+  ) : !action.up ? (
     <IconButton
       icon="play"
-      label={`Run ${server.name}`}
-      tooltip={`Run: ${runCommand(server.steps)}`}
+      label={`Run ${action.name}`}
+      tooltip={`Run: ${runCommand(action.steps)}`}
       size="xs"
       variant="ghost"
       tone="accent"
       disabled={pending}
-      onPress={() => startServer(server)}
+      onPress={() => startAction(action)}
     />
   ) : ours ? (
-    <IconButton icon="stop" label={`Stop ${server.name}`} size="xs" variant="ghost" disabled={pending} onPress={() => stopServer(server)} />
+    <IconButton icon="stop" label={`Stop ${action.name}`} size="xs" variant="ghost" disabled={pending} onPress={() => stopAction(action)} />
   ) : null
   return (
     <Box direction="row" align="center" gap="xs">
@@ -386,26 +386,26 @@ function ServerCard({ server }: { server: Server }) {
       {/* The name takes the free space, so the other buttons sit at the right edge. */}
       <Box grow minWidth={0}>
         <Text size="xs" muted truncate>
-          {server.name}
+          {action.name}
         </Text>
       </Box>
-      {server.up && ours ? (
-        <IconButton icon="terminal" label={`Show ${server.name} terminal`} size="xs" variant="ghost" disabled={pending} onPress={() => startServer(server)} />
+      {action.up && ours ? (
+        <IconButton icon="terminal" label={`Show ${action.name} terminal`} size="xs" variant="ghost" disabled={pending} onPress={() => startAction(action)} />
       ) : null}
       {/* Before the server printed its address there is nothing to open yet. */}
-      {server.up && server.url ? (
+      {action.up && action.url ? (
         <IconButton
           icon="open-external"
-          label={`Open ${server.name}`}
-          tooltip={ours ? `Open ${server.url}` : `Open ${server.url} (no terminal to stop)`}
+          label={`Open ${action.name}`}
+          tooltip={ours ? `Open ${action.url}` : `Open ${action.url} (no terminal to stop)`}
           size="xs"
           variant="ghost"
-          onPress={() => openServer(server)}
+          onPress={() => openAction(action)}
         />
       ) : null}
-      {/* The row ends with the green dot of a running server, the same as a working session's, or the
+      {/* The row ends with the green dot of a running action, the same as a working session's, or the
           edit button of a stopped one, whose form opens under the row and which then closes it. */}
-      {server.up ? (
+      {action.up ? (
         <Box direction="row" align="center" justify="center" width={DOT_PX} minWidth={DOT_PX} shrink={false}>
           <Text size="xs" tone="success">
             ●
@@ -414,11 +414,11 @@ function ServerCard({ server }: { server: Server }) {
       ) : (
         <IconButton
           icon={editingThis ? 'close' : 'edit'}
-          label={editingThis ? `Close ${server.name}` : `Edit ${server.name}`}
+          label={editingThis ? `Close ${action.name}` : `Edit ${action.name}`}
           tooltip={editingThis ? 'Close edit action' : undefined}
           size="xs"
           variant="ghost"
-          onPress={() => (editingThis ? closeForm() : editAction(server))}
+          onPress={() => (editingThis ? closeForm() : editAction(action))}
         />
       )}
     </Box>
@@ -754,11 +754,11 @@ function StepRows({ steps, onChange }: { steps: string[]; onChange: (steps: stri
 }
 
 /** The form for one quick action: its name, its commands, and the project whose checkout runs them. */
-function ActionForm({ id, servers, projects }: { id: string | null; servers: Server[]; projects: Project[] }) {
+function ActionForm({ id, actions, projects }: { id: string | null; actions: ActionStatus[]; projects: Project[] }) {
   const d = read(draft)
   const problem = read(formError)
   const saving = Boolean(read(busy)['action:save'] || read(busy)['action:delete'])
-  const server = id ? servers.find((s) => s.id === id) : undefined
+  const action = id ? actions.find((s) => s.id === id) : undefined
   // Only a project with a main checkout can run a command.
   const choices = projects.filter((p) => p.path)
   const edit = (change: Partial<Draft>) => {
@@ -769,7 +769,7 @@ function ActionForm({ id, servers, projects }: { id: string | null; servers: Ser
     // A card like the session details, so the form stands apart from the actions above it.
     <Box background="accent" radius="lg" padding="sm" gap="md" margin="xs">
       <Box gap="xs">
-        <Text size="sm">{server ? 'Edit action' : 'Add new action'}</Text>
+        <Text size="sm">{action ? 'Edit action' : 'Add new action'}</Text>
         {/* The placeholders show examples only, so the note says what is optional. */}
         <Text size="xs" muted>
           The commands run serially in order in the project's main checkout.
@@ -806,8 +806,8 @@ function ActionForm({ id, servers, projects }: { id: string | null; servers: Ser
           an action being edited also has a small Delete on the left. The row's button or Add
           action's closes the form. */}
       <Box direction="row" align="center" justify="between" gap="sm">
-        {server ? (
-          <Button variant="ghost" tone="danger" size="xs" tooltip={`Remove ${server.name} action from quick actions`} disabled={saving} onPress={() => void deleteAction(server.id, server.name)}>
+        {action ? (
+          <Button variant="ghost" tone="danger" size="xs" tooltip={`Remove ${action.name} action from quick actions`} disabled={saving} onPress={() => void deleteAction(action.id, action.name)}>
             Delete
           </Button>
         ) : (
@@ -818,7 +818,7 @@ function ActionForm({ id, servers, projects }: { id: string | null; servers: Ser
             Cancel
           </Button>
           <Button variant="solid" tone="neutral" size="xs" disabled={saving} onPress={() => void saveDraft(id)}>
-            {server ? 'Save' : 'Add +'}
+            {action ? 'Save' : 'Add +'}
           </Button>
         </Box>
       </Box>
@@ -908,7 +908,7 @@ export default function Panel() {
           </Box>
           {/* Quick actions follow Sessions directly; the column's md gap puts md above the line that
               divides them. The header is the panel's own, not a Collapsible, so it can carry a green dot
-              while a server runs, open or closed; its arrow points right when closed and down when open,
+              while an action runs, open or closed; its arrow points right when closed and down when open,
               as Orca's does. */}
           <Box shrink={false} gap="xs">
             <Box shrink={false}>
@@ -921,7 +921,7 @@ export default function Panel() {
                 <ListItem icon={open.actions ? 'expand' : 'next'} onPress={toggleActions}>
                   <Box direction="row" align="center" gap="sm">
                     <Text weight="medium">Quick actions</Text>
-                    {data.servers.some((server) => server.up) ? (
+                    {data.servers.some((action) => action.up) ? (
                       <Text size="xs" tone="success">
                         ●
                       </Text>
@@ -950,14 +950,14 @@ export default function Panel() {
                     // An action's edit form opens under its row, where Edit was pressed: Orca's
                     // components cannot move focus or scroll to it.
                     <Box gap="sm" paddingX="xs">
-                      {data.servers.map((server) =>
-                        form === server.id ? (
-                          <Stack key={server.id} gap="none">
-                            <ServerCard server={server} />
-                            <ActionForm key={form} id={form} servers={data.servers} projects={data.projects} />
+                      {data.servers.map((action) =>
+                        form === action.id ? (
+                          <Stack key={action.id} gap="none">
+                            <ActionCard action={action} />
+                            <ActionForm key={form} id={form} actions={data.servers} projects={data.projects} />
                           </Stack>
                         ) : (
-                          <ServerCard key={server.id} server={server} />
+                          <ActionCard key={action.id} action={action} />
                         )
                       )}
                     </Box>
@@ -966,13 +966,13 @@ export default function Panel() {
                       Click the + icon to create quick action commands.
                     </Text>
                   )}
-                  {/* Add action sits under the servers; the form for a new action opens between them
+                  {/* Add action sits under the actions; the form for a new action opens between them
                       and it, and Add action's button then closes it. While an action is edited, it
                       opens the new action form instead. */}
                   <Stack gap="none">
                     {form === NEW_ACTION ? (
                       <Box paddingY="sm">
-                        <ActionForm key={form} id={null} servers={data.servers} projects={data.projects} />
+                        <ActionForm key={form} id={null} actions={data.servers} projects={data.projects} />
                       </Box>
                     ) : null}
                     <LabelledButton
