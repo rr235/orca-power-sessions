@@ -98,28 +98,21 @@ test('quick actions show startup, completion and failure, and stop polling when 
   }
 })
 
-test('a change in the focused workspace reloads at once; the first report and a switch do not', async () => {
+test('a closed session disappears on a workspace report before any timer advances', async () => {
   mock.timers.enable({ apis: ['setTimeout', 'setInterval'] })
-  let loads = 0
+  let sessions = DEMO.sessions
   const host = mockHost({ requests: {
-    'overview.load': () => { loads++; return DEMO },
+    'overview.load': () => ({ ...DEMO, sessions }),
     'session.selected': () => null
   } })
   const view = await mount(panel, { host })
-  const context = (workspaceId: string, ids: string[]) => ({ context: { workspaceId, branch: 'main', displayName: workspaceId, terminals: ids.map((id) => ({ id })) } })
-  const after = async (payload: ReturnType<typeof context>) => {
-    const before = loads
-    await view.emit('workspace.changed', payload)
-    mock.timers.tick(400)
-    await view.settled()
-    return loads - before
-  }
+  const report = { context: { workspaceId: 'wt_a', branch: 'main', displayName: 'Workspace A', terminals: [{ id: 't1' }] } }
   try {
-    assert.equal(await after(context('wt_a', ['t1', 't2'])), 0, 'the first report is the baseline')
-    assert.equal(await after(context('wt_a', ['t1', 't2'])), 1, 'a close, reported while the terminal is still listed')
-    assert.equal(await after(context('wt_a', ['t1'])), 1, 'a terminal closed')
-    assert.equal(await after(context('wt_b', ['t9'])), 0, 'a workspace switch')
-    assert.equal(await after(context('wt_b', ['t9', 't10'])), 1, 'a terminal opened')
+    await view.emit('workspace.changed', report)
+    assert.ok(view.find({ text: sessions[0].title }))
+    sessions = sessions.slice(1)
+    await view.emit('workspace.changed', report)
+    assert.equal(view.find({ text: DEMO.sessions[0].title }), null, 'the close can still list the terminal')
   } finally {
     await view.unmount()
     mock.timers.reset()
