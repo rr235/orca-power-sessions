@@ -2,7 +2,6 @@
 // its details button.
 import { Box, env, List, ListItem, plugin, read, set, Text } from 'orca'
 import type { Project, Selected, Session } from '../protocol'
-import { tabOfPane } from '../shared'
 import { Icon, SessionDetails } from './session-details'
 import {
   act,
@@ -26,12 +25,9 @@ const openProject = (project: Project) =>
   project.path
     ? act(`open:${project.id}`, () => plugin.request('project.open', { path: project.path as string }, { timeoutMs: 50000 }), `Could not open ${project.name}.`)
     : Promise.resolve()
-/** The tab id Orca's runtime gives a session's tab: `agent-session:<id>` for a chat, else the pane key's tab. */
-export const sessionTab = (session: Session) => tabOfPane(session.key)?.tabId ?? session.key.split(':')[0]
-
 /** Whether Orca's window shows this session's tab. */
-export const isSelected = (session: Session, shown: Selected | null) =>
-  shown !== null && shown.worktreeId === session.worktreeId && shown.tabId === sessionTab(session)
+const isSelected = (session: Session, shown: Selected | null) =>
+  shown !== null && shown.worktreeId === session.worktreeId && shown.key === session.key
 
 /**
  * Whether Orca's window shows a workspace of this project. A worktree id starts with its repo's id,
@@ -50,25 +46,19 @@ async function focusSession(session: Session): Promise<void> {
     return
   }
   set(actionError, null)
-  holdSelected({ worktreeId: session.worktreeId, tabId: sessionTab(session) })
+  holdSelected({ worktreeId: session.worktreeId, key: session.key })
   try {
     await plugin.request('session.focus', { key: session.key, path: session.path }, { timeoutMs: 30000 })
   } catch (error) {
     set(actionError, `Could not show ${session.title}. ${error instanceof Error && error.message ? error.message : ''}`.trim())
   }
 }
-// A chat's compact answers once the summary is written; Orca lets a panel wait at most this long,
-// and the worker carries on after it.
-const COMPACT_TIMEOUT_MS = 120000
-/** Runs /compact in the session, its terminal or its chat; a failure says why. */
+/** Sends /compact to the session's terminal; a failure says why. */
 const compactSession = (session: Session) =>
   act(
     `compact:${session.key}`,
-    () => plugin.request('session.compact', { key: session.key }, { timeoutMs: COMPACT_TIMEOUT_MS }),
-    (error) =>
-      (error as { code?: string }).code === 'timeout'
-        ? `${session.title} is still compacting.`
-        : `Could not compact ${session.title}. ${error instanceof Error && error.message ? error.message : ''}`.trim()
+    () => plugin.request('session.compact', { key: session.key }, { timeoutMs: 20000 }),
+    (error) => `Could not compact ${session.title}. ${error instanceof Error && error.message ? error.message : ''}`.trim()
   )
 
 // The status dot's slot, in pixels, so every title ends at the same place.

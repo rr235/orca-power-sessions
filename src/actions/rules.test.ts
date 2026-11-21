@@ -1,6 +1,6 @@
 import { assert, test } from 'orca/testing'
 import type { Project, QuickAction } from '../protocol'
-import { linkProjects, listenerPids, listenersInFolder, portOf, printedUrl, processFolders, processTerminal, relearnedUrl, saveAction, storedActions } from './rules'
+import { linkProjects, listenerPids, listenersInFolder, portOf, printedUrl, orcaVariables, processFolders, processParent, relearnedUrl, saveAction, storedActions } from './rules'
 import { runCommand } from '../shared'
 
 test('finds the address a dev server printed, preferring its Local line', () => {
@@ -104,11 +104,23 @@ test('reads a server process and the terminal it was started in', () => {
   assert.equal(listenersInFolder([101, 103], folders, '/c/kb'), false, 'a sibling folder with the same prefix')
   assert.equal(listenersInFolder([104], folders, '/c/kb'), false, 'a folder lsof could not read')
   assert.equal(listenersInFolder([], folders, '/c/kb'), false, 'nothing listens')
-  const shell = '27643 ttys004 bun run kb:ui --dev TERM=xterm ORCA_TAB_ID=tab1 ORCA_TERMINAL_HANDLE=term_old ORCA_PANE_KEY=tab1:leaf1 HOME=/u'
-  assert.deepEqual(processTerminal(`  ${shell}\n`), { ppid: 27643, detached: false, paneKey: 'tab1:leaf1', handle: 'term_old' })
-  assert.deepEqual(processTerminal('12318 ttys004 node scripts/serve.mjs --dev'), { ppid: 12318, detached: false, paneKey: null, handle: null }, 'a clean environment')
-  assert.equal(processTerminal('1 ?? node pm2').detached, true, 'a macOS daemon')
-  assert.equal(processTerminal('1 ? node pm2').detached, true, 'a Linux daemon')
-  assert.equal(processTerminal('1 ?? /sbin/launchd').ppid, null, 'the walk ends at launchd')
-  assert.equal(processTerminal('5 ttys001 echo xORCA_PANE_KEY=tab9:leaf9').paneKey, null, 'only a whole variable counts')
+  assert.deepEqual(processParent('  27643 ttys004\n'), { ppid: 27643, detached: false })
+  assert.equal(processParent('1 ??').detached, true, 'a macOS daemon')
+  assert.equal(processParent('1 ?').detached, true, 'a Linux daemon')
+  assert.equal(processParent('1 ??').ppid, null, 'the walk ends at launchd')
+})
+
+test('keeps only the two Orca variables from an environment', () => {
+  const variables = orcaVariables(
+    [
+      '5 bun run kb:ui TERM=xterm HOME=/u ORCA_TERMINAL_HANDLE=term_old ORCA_PANE_KEY=tab1:leaf1 SECRET=x',
+      '6 node serve.mjs HOME=/u',
+      '7 echo xORCA_PANE_KEY=tab9:leaf9'
+    ].join('\n')
+  )
+  assert.deepEqual([...variables], [
+    [5, { paneKey: 'tab1:leaf1', handle: 'term_old' }],
+    [6, { paneKey: null, handle: null }],
+    [7, { paneKey: null, handle: null }]
+  ])
 })

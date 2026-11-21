@@ -111,11 +111,10 @@ export type SessionUsage = {
 }
 
 /**
- * The workspace Orca's window shows, by worktree id, and the tab it shows there, as Orca's runtime
- * names it: `agent-session:<id>` for a chat, the tab id for a terminal. `tabId` is null when Orca
- * reports no tab.
+ * The workspace Orca's window shows, by worktree id, and the session shown there, by key. Orca names
+ * only the workspace, so the worker's `key` is null; the panel fills it in when a press shows a session.
  */
-export type Selected = { worktreeId: string; tabId: string | null }
+export type Selected = { worktreeId: string; key: string | null }
 
 export type Overview = { servers: ActionStatus[]; projects: Project[]; sessions: Session[] }
 
@@ -136,12 +135,11 @@ declare module 'orca' {
     'action.save': { input: QuickActionInput; output: null }
     /** Removes a quick action; a terminal it runs in stays open. */
     'action.delete': { input: { id: string }; output: null }
-    /** Runs `/compact` in the session: sent to its terminal, or run in its chat through Orca's chat RPC.
-     *  Rejects with the reason when a chat's compact did not complete. */
+    /** Sends `/compact` to the session's terminal. Rejects for a chat, which Orca offers no way to compact. */
     'session.compact': { input: { key: string }; output: null }
-    /** The workspace and tab Orca's window shows, or null when no workspace is focused or it cannot tell. */
+    /** The workspace Orca's window shows, without its tab, or null when no workspace is focused. */
     'session.selected': { output: Selected | null }
-    /** Shows a session's workspace and brings its tab to the front. */
+    /** Shows a session's workspace and, for a terminal session, brings its terminal to the front. */
     'session.focus': { input: { key: string; path: string }; output: null }
     /** Shows a project's main checkout in Orca. */
     'project.open': { input: { path: string }; output: null }

@@ -1,6 +1,6 @@
 // The ownership policy uses observed values directly, without recreating the process probe.
 import { assert, test } from 'orca/testing'
-import { actionTerminals, commandRunning, runState, runStates, startStep, terminalTitle } from './rules'
+import { actionTerminals, commandRunning, foregroundCommands, runState, runStates, startStep, terminalTitle } from './rules'
 import type { RunObservation } from './rules'
 
 const KB = { id: 'kb', name: 'Knowledge Base', path: '/c/kb', url: 'http://localhost:3410' }
@@ -73,13 +73,11 @@ test('before a URL is known, only a foreground command in its live terminal runs
 })
 
 test('reads foreground commands from the process list, excluding shells and prompt helpers', () => {
-  const env = (pane: string) => `TERM=xterm-256color ORCA_TERMINAL_HANDLE=term_kb ORCA_PANE_KEY=${pane} HOME=/u`
-  assert.equal(commandRunning(`68562 ttys001 S+ bun run dev ${env('tab1:leaf1')}`, 'tab1:leaf1', 'term_kb'), true)
-  assert.equal(commandRunning('68562 ttys001 S+ bun run dev ORCA_PANE_KEY=tab1:leaf1', 'tab1:leaf1', 'term_x'), true)
-  assert.equal(commandRunning('', 'tab1:leaf1', 'term_kb'), false)
-  assert.equal(commandRunning(`64961 ttys001 S /u/.cache/gitstatus/gitstatusd ${env('tab1:leaf1')}`, 'tab1:leaf1', 'term_kb'), false)
-  assert.equal(commandRunning(`64434 ttys001 S+ -zsh ${env('tab1:leaf1')}`, 'tab1:leaf1', 'term_kb'), false)
-  assert.equal(commandRunning('700 ttys002 S+ bun run dev ORCA_PANE_KEY=tab2:leaf2 ORCA_TERMINAL_HANDLE=term_other', 'tab1:leaf1', 'term_kb'), false)
-  assert.equal(commandRunning('700 ttys002 S+ bun run dev ORCA_PANE_KEY=tab1:leaf10', 'tab1:leaf1', 'term_x'), false)
-  assert.equal(commandRunning(`700 ?? Ss+ node pm2 ${env('tab1:leaf1')}`, 'tab1:leaf1', 'term_kb'), false)
+  const list = ['68562 ttys001 S+ bun', '64961 ttys001 S /u/.cache/gitstatus/gitstatusd', '64434 ttys001 S+ -zsh', '700 ?? Ss+ node'].join('\n')
+  assert.deepEqual(foregroundCommands(list), [68562], 'not a background helper, a shell or a daemon')
+  const variables = new Map([[68562, { paneKey: 'tab1:leaf1', handle: 'term_kb' }]])
+  assert.equal(commandRunning(variables, 'tab1:leaf1', 'term_x'), true, 'by pane')
+  assert.equal(commandRunning(variables, null, 'term_kb'), true, 'by handle')
+  assert.equal(commandRunning(variables, 'tab1:leaf10', 'term_other'), false)
+  assert.equal(commandRunning(new Map(), 'tab1:leaf1', 'term_kb'), false)
 })

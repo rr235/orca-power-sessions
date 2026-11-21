@@ -194,21 +194,35 @@ export function relearnedUrl(stored: string | null, printed: string): string {
   return stored && portOf(stored) !== null && portOf(stored) === portOf(printed) ? stored : printed
 }
 
-/** A process's parent, controlling terminal and the Orca terminal it was started in, from
- *  `ps eww -o ppid=,tty=,command= -p <pid>`: Orca puts `ORCA_PANE_KEY` and `ORCA_TERMINAL_HANDLE`
- *  in a terminal's environment. A daemon has no controlling terminal (`??` on macOS, `?` on Linux). */
-export type ProcessTerminal = { ppid: number | null; detached: boolean; paneKey: string | null; handle: string | null }
+/** A process's parent and whether it lacks a controlling terminal, from `ps -o ppid=,tty= -p <pid>`.
+ *  A daemon has none (`??` on macOS, `?` on Linux). */
+export type ProcessParent = { ppid: number | null; detached: boolean }
 
-export function processTerminal(output: string): ProcessTerminal {
-  const line = output.trim()
-  const [, ppidText, tty] = /^(\d+)\s+(\S+)/.exec(line) ?? []
+export function processParent(output: string): ProcessParent {
+  const [, ppidText, tty] = /^\s*(\d+)\s+(\S+)/.exec(output) ?? []
   const ppid = Number(ppidText)
-  return {
-    ppid: Number.isInteger(ppid) && ppid > 1 ? ppid : null,
-    detached: !tty || /^\?+$/.test(tty),
-    paneKey: /\sORCA_PANE_KEY=(\S+)/.exec(line)?.[1] ?? null,
-    handle: /\sORCA_TERMINAL_HANDLE=(term_\S+)/.exec(line)?.[1] ?? null
+  return { ppid: Number.isInteger(ppid) && ppid > 1 ? ppid : null, detached: !tty || /^\?+$/.test(tty) }
+}
+
+/** The Orca terminal a process was started in: Orca puts `ORCA_PANE_KEY` and `ORCA_TERMINAL_HANDLE` in a terminal's environment. */
+export type OrcaVariables = { paneKey: string | null; handle: string | null }
+
+/**
+ * Each process's two Orca variables, by pid, from `ps eww -o pid=,command= -p <pids>`. macOS can only
+ * hand over a process's whole environment, so each line is cut down to these two as it is read.
+ */
+export function orcaVariables(output: string): Map<number, OrcaVariables> {
+  const found = new Map<number, OrcaVariables>()
+  for (const line of output.split('\n')) {
+    const pid = Number(/^\s*(\d+)\s/.exec(line)?.[1])
+    if (pid) {
+      found.set(pid, {
+        paneKey: /\sORCA_PANE_KEY=(\S+)/.exec(line)?.[1] ?? null,
+        handle: /\sORCA_TERMINAL_HANDLE=(term_\S+)/.exec(line)?.[1] ?? null
+      })
+    }
   }
+  return found
 }
 
 /** Observations of a quick action's listener and foreground command, read by the worker. */
@@ -279,20 +293,22 @@ export function startStep(state: RunState, own: string | null, commandRunning: b
 const SHELLS = new Set(['sh', 'bash', 'zsh', 'fish', 'dash', 'ksh', 'tcsh', 'csh', 'nu', 'login'])
 
 /**
- * Whether a command runs in a terminal, from `ps eww -ax -o pid=,tty=,stat=,command=`: a foreground
- * process (`+`) carrying the terminal's `ORCA_PANE_KEY` or `ORCA_TERMINAL_HANDLE`, other than a shell.
- * Prompt helpers run in the background. macOS hides the environment of its own binaries, so a
- * command such as `/bin/sleep` is not seen; dev servers (node, bun, deno) are.
+ * The foreground processes (`+`) in a terminal, other than shells, from `ps -ax -o pid=,tty=,stat=,comm=`:
+ * the commands that may run in an Orca terminal. Prompt helpers run in the background.
  */
-export function commandRunning(psOutput: string, paneKey: string | null, handle: string): boolean {
-  return psOutput.split('\n').some((line) => {
-    const [, tty, stat, command] = /^\s*\d+\s+(\S+)\s+(\S+)\s+(.*)$/.exec(line) ?? []
-    if (!command || !stat.includes('+') || /^\?+$/.test(tty)) {
-      return false
-    }
-    const program = (command.split(/\s/)[0] ?? '').split('/').pop()?.replace(/^-/, '') ?? ''
-    const padded = `${command} `
-    const ours = (paneKey !== null && padded.includes(` ORCA_PANE_KEY=${paneKey} `)) || padded.includes(` ORCA_TERMINAL_HANDLE=${handle} `)
-    return ours && !SHELLS.has(program)
+export function foregroundCommands(psOutput: string): number[] {
+  return psOutput.split('\n').flatMap((line) => {
+    const [, pid, tty, stat, program] = /^\s*(\d+)\s+(\S+)\s+(\S+)\s+(.*)$/.exec(line) ?? []
+    const name = program?.trim().split('/').pop()?.replace(/^-/, '') ?? ''
+    return pid && stat.includes('+') && !/^\?+$/.test(tty) && name && !SHELLS.has(name) ? [Number(pid)] : []
   })
+}
+
+/**
+ * Whether one of these foreground commands runs in the terminal, by its Orca variables. macOS hides
+ * the environment of its own binaries, so a command such as `/bin/sleep` is not seen; dev servers
+ * (node, bun, deno) are.
+ */
+export function commandRunning(variables: ReadonlyMap<number, OrcaVariables>, paneKey: string | null, handle: string): boolean {
+  return [...variables.values()].some((v) => (paneKey !== null && v.paneKey === paneKey) || v.handle === handle)
 }

@@ -2,6 +2,9 @@
 import { Box, Button, env, IconButton, Image, List, ListItem, Progress, RelativeTime, Separator, shell, Skeleton, Text } from 'orca'
 import type { PullRequestInfo, Session, SessionUsage, TokenSplit } from '../protocol'
 
+/** Whether a session runs in an Orca chat, whose pane key is `structured-agent-session-<id>:<leaf>`. */
+export const isChat = (session: Session) => session.key.startsWith('structured-agent-session-')
+
 /** A plugin image `px` wide: Orca's smallest Image is 48px, but it never grows past its box. */
 export function Icon({ src, alt = '', px, rounded }: { src: string; alt?: string; px: number; rounded?: boolean }) {
   return (
@@ -283,8 +286,9 @@ function StatusFact({ session, compacting, onCompact, favourite }: Pick<SessionD
           </Text>
         </Box>
       ) : null}
-      {/* Runs /compact in the session, at the far right; not while a turn runs, which Orca refuses for
-          a chat. */}
+      {/* Runs /compact in a terminal session, at the far right; not while a turn runs. Orca offers no
+          way to compact a chat. */}
+      {isChat(session) ? null : (
       <Box shrink={false}>
         <IconButton
           icon="layers"
@@ -297,6 +301,7 @@ function StatusFact({ session, compacting, onCompact, favourite }: Pick<SessionD
           onPress={onCompact}
         />
       </Box>
+      )}
     </Box>
   )
 }

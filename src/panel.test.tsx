@@ -4,7 +4,7 @@ import { storage } from 'orca'
 import { mock } from 'node:test'
 import { DEMO, DEMO_USAGE, DEMO_WORKTREES } from './fixtures'
 import * as panel from './panel'
-import { byWorktree, isSelected } from './panel/sessions'
+import { byWorktree } from './panel/sessions'
 import { saveAction, storedActions } from './actions/rules'
 
 /** The pressable row holding the image named `alt`: an image's alt is not a label. */
@@ -145,7 +145,7 @@ test('shows quick actions, sessions and projects, and starts an action', async (
         focused.push(`${key} ${path}`)
         return null
       },
-      'session.selected': () => ({ worktreeId: 'r2::/w/kb', tabId: 'p2' })
+      'session.selected': () => ({ worktreeId: 'r2::/w/kb', key: 'p2' })
     }
   })
   const view = await mount(panel, { host })
@@ -563,18 +563,6 @@ test('opens a project when its name is pressed', async () => {
   }
 })
 
-test('matches the tab Orca shows to a chat or terminal session', () => {
-  const session = (key: string) => ({ ...DEMO.sessions[0], key, worktreeId: 'r1::/w' })
-  const chat = session('structured-agent-session-claude_abc:leaf-1')
-  const terminal = session('tab-1:leaf-1')
-  const shown = (tabId: string | null, worktreeId = 'r1::/w') => ({ worktreeId, tabId })
-  assert.equal(isSelected(chat, shown('agent-session:claude_abc')), true)
-  assert.equal(isSelected(terminal, shown('tab-1')), true)
-  assert.equal(isSelected(terminal, shown('tab-1', 'r2::/w')), false, 'the same tab id in another workspace')
-  assert.equal(isSelected(terminal, shown(null)), false, 'a file or browser tab')
-  assert.equal(isSelected(terminal, null), false)
-})
-
 test('shows a chat or a terminal session\'s tab from its title', async () => {
   const focused: string[] = []
   const chat = { ...DEMO.sessions[1], key: 'structured-agent-session-claude_abc:leaf-1' }
@@ -615,7 +603,7 @@ test('groups a project\'s sessions by worktree when it has more than one', async
     requests: {
       'overview.load': () => DEMO_WORKTREES,
       'session.usage': () => ({}),
-      'session.selected': () => ({ worktreeId: 'r1::/w/platform-main', tabId: null })
+      'session.selected': () => ({ worktreeId: 'r1::/w/platform-main', key: null })
     }
   })
   const view = await mount(panel, { host })

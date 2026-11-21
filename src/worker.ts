@@ -22,7 +22,7 @@ export default function activate(orca: OrcaWorkerApi): void {
   }
 
   orca.panels.handle('overview.load', load)
-  orca.panels.handle('session.usage', ({ keys }) => sessionUsage(keys))
+  orca.panels.handle('session.usage', ({ keys }) => sessionUsage(orca, keys))
   orca.panels.handle('pr.info', ({ urls }) => pullRequestInfo(urls))
   orca.panels.handle('server.start', ({ id }) => actions.start(id))
   orca.panels.handle('server.stop', ({ id }) => actions.stop(id))
