@@ -43,6 +43,7 @@ Review the access request, then run the approval command Orca prints.
 3. Press **Compact** in the details to compact the conversation.
 4. Press the star before the time in a session's details to keep them open under **Favourites**, above the list. The star turns red; press it again to remove the session.
 5. Click **Favourites**, **Sessions** or **Quick actions** to collapse or expand that section.
+6. Press the activity button beside **Sessions** to show only projects with sessions. Press it again to show every project; the ones that return show a grey dot for a moment.
 
 Apart from that first agent in an empty checkout, Power Sessions does not create sessions or worktrees. Open them in Orca as usual.
 

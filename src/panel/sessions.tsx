@@ -14,6 +14,7 @@ import {
   pinSession,
   prInfo,
   prLoading,
+  revealed,
   selected,
   toggleDetails,
   unpinSession,
@@ -196,18 +197,27 @@ export function groups(projects: Project[], sessions: Session[]): Group[] {
 
 export function ProjectGroup({ group }: { group: Group }) {
   const { project } = group
+  const isRevealed = read(revealed).includes(group.key)
   return (
     <Box gap="none">
       {/* The whole row is pressable and opens the project's main checkout in Orca. Its name is in
           normal text while Orca shows one of its workspaces. */}
       <List>
         <ListItem onPress={project?.path ? () => void openProject(project) : undefined}>
+          {/* The name only takes the width it needs, so the dot of a project just shown again sits
+              right after it: the grey dot of an idle session. While the dot shows, the name is in
+              normal text, then muted again. */}
           <Box direction="row" align="center" gap="xs" minWidth={0}>
-            <Box grow minWidth={0}>
-              <Text size="xs" muted={!isProjectSelected(group, read(selected))} truncate>
+            <Box minWidth={0}>
+              <Text size="xs" muted={!isProjectSelected(group, read(selected)) && !isRevealed} truncate>
                 {group.name}
               </Text>
             </Box>
+            {isRevealed ? (
+              <Text size="xs" muted>
+                ●
+              </Text>
+            ) : null}
           </Box>
         </ListItem>
       </List>
