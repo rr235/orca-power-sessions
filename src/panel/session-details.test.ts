@@ -1,5 +1,17 @@
 import { assert, test } from 'orca/testing'
-import { contextLabel, countLabel, modelLabel, modelTone, tokenLabel, tokensStatement, turnsTone } from './session-details'
+import type { Session, SessionUsage } from '../protocol'
+import { contextLabel, countLabel, modelLabel, modelTone, tokenLabel, tokensStatement, turnsTone, usageGap } from './session-details'
+
+test('says why a session has no turns', () => {
+  const session = (agent: string | null) => ({ agent }) as Session
+  const stats = (turns: number | null) => ({ turns }) as SessionUsage
+  assert.equal(usageGap(session('claude'), stats(0)), null, 'no prompt yet is still known')
+  assert.equal(usageGap(session('codex'), stats(12)), null)
+  assert.equal(usageGap(session('claude'), undefined), 'No transcript found for this session.')
+  assert.equal(usageGap(session('codex'), stats(null)), 'No transcript found for this session.')
+  assert.equal(usageGap(session('gemini'), stats(3)), 'Usage is only read for Claude and Codex sessions.')
+  assert.equal(usageGap(session(null), undefined), 'Usage is only read for Claude and Codex sessions.')
+})
 
 test('labels models and token counts', () => {
   assert.deepEqual(
