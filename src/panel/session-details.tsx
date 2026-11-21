@@ -180,13 +180,16 @@ export function ContextFact({ used, window }: { used: number | null; window: num
 
 /**
  * Why a session has no turns to show, in their place: only Claude and Codex transcripts are read,
- * and one may not be found. Null when the turns are known.
+ * one may not be found, and the read itself may fail. Null when the turns are known.
  */
-function usageGap(session: Session, stats: SessionUsage | undefined): string | null {
+function usageGap(session: Session, stats: SessionUsage | undefined, readFailed: boolean): string | null {
   if (!session.agent || !AGENT_LABEL[session.agent]) {
     return 'Usage is only read for Claude and Codex sessions.'
   }
-  return stats?.turns == null ? 'No transcript found for this session.' : null
+  if (stats?.turns != null) {
+    return null
+  }
+  return readFailed ? 'Could not read usage. The next refresh tries again.' : 'No transcript found for this session.'
 }
 
 /** `12 turns, 1 compaction, 0 tool calls`: a count with its noun, singular for one. */
@@ -207,8 +210,8 @@ export function turnsTone(turns: number): 'warning' | 'danger' | undefined {
  * context has been compacted, then the totals in the same shape, `40 turns, 186 tool calls, 3
  * compactions`, all muted. Before the first compaction the total turns take the colour instead.
  */
-export function TurnsFact({ session, stats }: { session: Session; stats: SessionUsage | undefined }) {
-  const gap = usageGap(session, stats)
+export function TurnsFact({ session, stats, readFailed }: { session: Session; stats: SessionUsage | undefined; readFailed: boolean }) {
+  const gap = usageGap(session, stats, readFailed)
   const turns = countLabel(stats?.turns ?? 0, 'turn')
   const compactions = stats?.compactions
   const rest = [
@@ -254,6 +257,8 @@ type SessionDetailsProps = {
   session: Session
   stats: SessionUsage | undefined
   loading: boolean
+  /** The last usage read failed, rather than finding no transcript. */
+  readFailed: boolean
   info: Record<string, PullRequestInfo>
   titleLoading: Record<string, boolean>
   compacting: boolean
@@ -335,7 +340,7 @@ function StatusFact({ session, compacting, onCompact, favourite }: Pick<SessionD
 }
 
 /** What Orca and the agent's transcript say about a session, under its row while open. */
-export function SessionDetails({ session, stats, loading, info, titleLoading, compacting, onCompact, favourite }: SessionDetailsProps) {
+export function SessionDetails({ session, stats, loading, readFailed, info, titleLoading, compacting, onCompact, favourite }: SessionDetailsProps) {
   // Only a Claude or Codex transcript has numbers to wait for, and only the first read shows
   // skeletons: a refresh keeps the numbers already shown.
   const pending = !stats && loading && Boolean(session.agent && AGENT_LABEL[session.agent])
@@ -355,7 +360,7 @@ export function SessionDetails({ session, stats, loading, info, titleLoading, co
         <Box gap="xs">
           <ModelFact session={session} stats={stats} />
           <ContextFact used={stats?.context ?? null} window={stats?.contextWindow ?? null} />
-          <TurnsFact session={session} stats={stats} />
+          <TurnsFact session={session} stats={stats} readFailed={readFailed} />
         </Box>
       )}
       {/* The branch, with its pull requests below it, set off from the usage by a rule; a long

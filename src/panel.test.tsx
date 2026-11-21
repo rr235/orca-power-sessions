@@ -3,6 +3,7 @@ import { assert, mockHost, mount, test, type TreeSnapshot } from 'orca/testing'
 import { storage } from 'orca'
 import { mock } from 'node:test'
 import { DEMO, DEMO_USAGE, DEMO_WORKTREES } from './fixtures'
+import type { SessionUsage } from './protocol'
 import * as panel from './panel'
 import { byWorktree } from './panel/sessions'
 import { saveAction, storedActions } from './actions/rules'
@@ -710,10 +711,12 @@ test('shows skeletons only for what the details are still reading', async () => 
 test('explains missing usage and reserves the same lines for known, partial and missing usage', async () => {
   const missing = 'No transcript found for this session.'
   const unsupported = 'Usage is only read for Claude and Codex sessions.'
+  const failed = 'Could not read usage. The next refresh tries again.'
   const partial = { ...DEMO_USAGE.p3, context: 121_400 }
   const zero = { ...DEMO_USAGE.p2, turns: 0, compactions: 0, toolCalls: 0 }
-  const cases = [
+  const cases: { agent: string | null; stats: SessionUsage | undefined; note: string; fails?: true }[] = [
     { agent: 'claude', stats: undefined, note: missing },
+    { agent: 'claude', stats: undefined, note: failed, fails: true },
     { agent: 'codex', stats: undefined, note: missing },
     { agent: 'gemini', stats: undefined, note: unsupported },
     { agent: null, stats: undefined, note: unsupported },
@@ -725,10 +728,18 @@ test('explains missing usage and reserves the same lines for known, partial and 
   const lines = (node: TreeSnapshot | string | null): number =>
     !node || typeof node === 'string' ? 0 : node.type === 'Text' ? 1 : (node.children ?? []).reduce((sum, child) => sum + lines(child), 0)
   const counts: number[] = []
-  for (const { agent, stats, note } of cases) {
+  for (const { agent, stats, note, fails } of cases) {
     const session = { ...DEMO.sessions[0], agent, prs: [] }
     const host = mockHost({
-      requests: { 'overview.load': () => ({ ...DEMO, sessions: [session] }), 'session.usage': () => stats ? { [session.key]: stats } : {} },
+      requests: {
+        'overview.load': () => ({ ...DEMO, sessions: [session] }),
+        'session.usage': () => {
+          if (fails) {
+            throw new Error('worker timed out')
+          }
+          return stats ? { [session.key]: stats } : {}
+        }
+      },
       storage: { expanded: { [session.key]: true } }
     })
     const view = await mount(panel, { host })

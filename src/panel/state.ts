@@ -47,6 +47,8 @@ export const usage = atom<Record<string, SessionUsage>>({})
 export const prInfo = atom<Record<string, PullRequestInfo>>({})
 // Sessions whose numbers and pull request URLs whose titles are being read, for their skeletons.
 export const usageLoading = atom<Record<string, boolean>>({})
+// Sessions whose last usage read failed, so their details do not report a missing transcript.
+export const usageFailed = atom<Record<string, boolean>>({})
 export const prLoading = atom<Record<string, boolean>>({})
 export const loadError = atom<string | null>(null)
 export const busy = atom<Record<string, boolean>>({})
@@ -97,11 +99,14 @@ export async function loadUsage(keys: string[]): Promise<void> {
   }
   void loadPullRequests(keys)
   update(usageLoading, (all) => ({ ...all, ...Object.fromEntries(keys.map((key) => [key, true])) }))
+  const markFailed = (failed: boolean) => update(usageFailed, (all) => ({ ...all, ...Object.fromEntries(keys.map((key) => [key, failed])) }))
   try {
     const next = await plugin.request('session.usage', { keys }, { timeoutMs: 30000 })
     update(usage, (all) => ({ ...all, ...next }))
+    markFailed(false)
   } catch {
-    // The details still show what Orca reported.
+    // The details still show what Orca reported, and the next refresh reads again.
+    markFailed(true)
   } finally {
     update(usageLoading, (all) => ({ ...all, ...Object.fromEntries(keys.map((key) => [key, false])) }))
   }
