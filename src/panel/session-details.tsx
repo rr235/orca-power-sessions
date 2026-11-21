@@ -1,6 +1,6 @@
 // Shared session formatting and detail rows, used by the Power Sessions panel.
 import { Box, Button, env, IconButton, Image, List, ListItem, Progress, RelativeTime, Separator, shell, Skeleton, Text } from 'orca'
-import type { PullRequestInfo, Session, SessionUsage, TokenSplit } from './protocol'
+import type { PullRequestInfo, Session, SessionUsage, TokenSplit } from '../protocol'
 
 /** A plugin image `px` wide: Orca's smallest Image is 48px, but it never grows past its box. */
 export function Icon({ src, alt = '', px, rounded }: { src: string; alt?: string; px: number; rounded?: boolean }) {
