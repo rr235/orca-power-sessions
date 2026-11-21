@@ -92,13 +92,7 @@ orca plugin check .
 orca plugin dev load .
 ```
 
-Two scripts redraw generated images. Both need Google Chrome.
-
-- `bun scripts/icons.ts` draws the [Lucide](https://lucide.dev/icons) icons in `assets/details/`, under the [ISC licence](assets/details/LICENSE).
-- `bun scripts/plugin-page.ts` draws the plugin page screenshots in `assets/plugin-page/` from the captures in `assets/screenshots/`.
-
-Agent icons in `assets/agents/` use Orca’s Claude mark and the Codex mark from the Codex desktop
-app (`ChatGPT.app`).
+How the code is organised, where new code goes and how the images are made is in [docs/development.md](docs/development.md).
 
 ## License
 
