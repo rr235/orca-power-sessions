@@ -5,7 +5,6 @@ import {
   Box,
   Button,
   Callout,
-  Code,
   env,
   IconButton,
   Input,
@@ -32,6 +31,7 @@ import { runCommand } from './servers'
 import { normalUrl } from './url'
 import { Icon, SessionDetails } from './session-details'
 import { startingActions, watchQuickActions } from './quick-action-polling'
+import { ACTIONS_DESCRIPTION, ICON_INSET_PX, NoActionsNote, NoProjectsNote, SectionDescription, SESSIONS_DESCRIPTION } from './panel-sections'
 
 const REFRESH_MS = 15000
 const EVENT_DELAY_MS = 400
@@ -429,9 +429,6 @@ function ServerCard({ server }: { server: Server }) {
 // The Run or Stop slot, in pixels, so every name starts at the same place.
 const CONTROL_PX = 24
 
-// How far an xs icon button's glyph sits inside its CONTROL_PX slot, in pixels.
-const ICON_INSET_PX = 7
-
 // The status dot's slot, in pixels, so every title ends at the same place.
 const DOT_PX = 16
 
@@ -626,63 +623,6 @@ function groups(projects: Project[], sessions: Session[]): Group[] {
     byKey.set(key, group)
   }
   return [...byKey.values()]
-}
-
-/** Shown in Sessions while Orca has no projects: how to add one, in the words of Orca's own buttons. */
-function NoProjectsNote() {
-  return (
-    <Callout title="No Orca projects found">
-      <Stack gap="xs">
-        <NoteGap />
-        <Text size="xs">{SESSIONS_DESCRIPTION}</Text>
-        <NoteGap />
-        <Text size="xs">To add a project:</Text>
-        <Text size="xs">1. Open the workspaces sidebar, click on the add project (folder with plus inside) icon.</Text>
-        <Text size="xs">2. Choose Browse folder for a folder you have, Clone from URL for a Git repository, or Create new project to start empty.</Text>
-        <Text size="xs">3. Start a session in the project. It appears here on its own.</Text>
-      </Stack>
-    </Callout>
-  )
-}
-
-/** Shown in Quick actions while none is saved: how to add one, with examples, in the form's own words. */
-function NoActionsNote() {
-  return (
-    <Callout tone="accent" title="No quick actions yet?">
-      <Stack gap="xs">
-        <NoteGap />
-        <Text size="xs">{ACTIONS_DESCRIPTION}</Text>
-        <NoteGap />
-        <Text size="xs">Click Add action below to add one.</Text>
-        <NoteGap />
-        <Text size="xs">Examples:</Text>
-        <ExampleLine label="- Single command:" commands={['npm run dev']} />
-        <ExampleLine label="- Multiple commands:" commands={['git pull', 'npm install', 'npm run build']} />
-      </Stack>
-    </Callout>
-  )
-}
-
-/** A blank line in a note: under its title, and between its parts. */
-const NoteGap = () => <Box height={8} shrink={false} />
-
-// What Sessions and Quick actions are for: under their headers, or first in their note while it shows.
-const SESSIONS_DESCRIPTION = 'All sessions are grouped by Orca projects.'
-const ACTIONS_DESCRIPTION = 'One click run for commands to run within your project folder.'
-
-/** One example in a note: its label, then each command as inline code, comma separated. */
-function ExampleLine({ label, commands }: { label: string; commands: string[] }) {
-  return (
-    <Box direction="row" align="center" gap="xs" wrap>
-      <Text size="xs">{label}</Text>
-      {commands.map((command, i) => (
-        <Box key={command} direction="row" align="center" gap="none">
-          <Code>{command}</Code>
-          {i < commands.length - 1 ? <Text size="xs">,</Text> : null}
-        </Box>
-      ))}
-    </Box>
-  )
 }
 
 function ProjectGroup({ group }: { group: Group }) {
@@ -923,14 +863,7 @@ export default function Panel() {
                     <Text weight="medium">Favourites</Text>
                   </ListItem>
                 </List>
-                <Box direction="row" gap="none" paddingX="xs">
-                  <Box width={ICON_INSET_PX} minWidth={ICON_INSET_PX} shrink={false} />
-                  <Box grow minWidth={0}>
-                    <Text size="xs" muted>
-                      Pin session details by clicking on the star button.
-                    </Text>
-                  </Box>
-                </Box>
+                <SectionDescription text="Pin session details by clicking on the star button." />
               </Box>
               {favouritesOpen && pinnedSessions.length ? (
                 <Box shrink={false}>
@@ -964,14 +897,7 @@ export default function Panel() {
               {/* The description starts where Quick actions' does. While the no projects note shows,
                   it is the note's first line instead. */}
               {sessionsOpen && !hasProjects ? null : (
-                <Box direction="row" gap="none" paddingX="xs">
-                  <Box width={ICON_INSET_PX} minWidth={ICON_INSET_PX} shrink={false} />
-                  <Box grow minWidth={0}>
-                    <Text size="xs" muted>
-                      {SESSIONS_DESCRIPTION}
-                    </Text>
-                  </Box>
-                </Box>
+                <SectionDescription text={SESSIONS_DESCRIPTION} />
               )}
             </Box>
             {sessionsOpen ? (
@@ -1012,14 +938,7 @@ export default function Panel() {
                   then the gap before an icon centred in its CONTROL_PX slot. While the no actions note
                   shows, it is the note's first line instead. */}
               {open.actions && !data.servers.length ? null : (
-                <Box direction="row" gap="none" paddingX="xs">
-                  <Box width={ICON_INSET_PX} minWidth={ICON_INSET_PX} shrink={false} />
-                  <Box grow minWidth={0}>
-                    <Text size="xs" muted>
-                      {ACTIONS_DESCRIPTION}
-                    </Text>
-                  </Box>
-                </Box>
+                <SectionDescription text={ACTIONS_DESCRIPTION} />
               )}
               {/* Room between the description and the actions when they show. */}
               {open.actions ? <Box height={8} shrink={false} /> : null}
