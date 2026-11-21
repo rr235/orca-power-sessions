@@ -1,4 +1,4 @@
-// The panel <-> worker contract, declared once: src/panel.tsx and src/worker.ts both read it.
+// The panel <-> worker contract, declared once: the panel and the worker both read it.
 // Quick actions were once called servers. Kept for compatibility, do not rename: the `server.start`
 // and `server.stop` requests, the `servers` field of `Overview`, the storage keys `serverTerminals`
 // and `serverStarts`, and the terminal title from `terminalTitle`.
@@ -29,7 +29,7 @@ export type QuickActionInput = { id?: string; name: string; steps: string[]; pro
 /**
  * A quick action as the panel lists it: `up` whether its listener belongs to the watched Orca terminal
  * (before its address is known, whether a foreground command runs there). `terminal` is that
- * watched terminal while it is open. See `runState` in servers.ts.
+ * watched terminal while it is open. See `runState` in src/actions/rules.ts.
  */
 export type ActionStatus = {
   id: string

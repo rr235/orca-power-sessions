@@ -1,5 +1,5 @@
 // The `orca` CLI commands the worker runs, one function each. Lists answer the CLI's JSON as it is,
-// for the lookups in terminals.ts, agents.ts and overview.ts to read.
+// for the lookups in terminals.ts, agents.ts and src/sessions/list.ts to read.
 import { run } from '../cli'
 import { defaultAgent } from './agents'
 import { handleOf } from './terminals'

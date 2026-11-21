@@ -3,10 +3,9 @@
 // the worker keeps them in plugin storage. Each action is watched in one Orca terminal and counts as
 // running only while the process on its port was started in it (`runState`). Unless typed, the
 // address is learned again from what the server prints at each start.
-import { terminalAlive, terminalByTitle } from './orca/terminals'
-import type { Project, QuickAction, QuickActionInput } from './protocol'
-import { runCommand } from './shared'
-import { normalUrl } from './url'
+import { terminalAlive, terminalByTitle } from '../orca/terminals'
+import type { Project, QuickAction, QuickActionInput } from '../protocol'
+import { normalUrl, runCommand } from '../shared'
 
 /** The terminal title a quick action's terminal gets, so it is found again after a worker restart. The
  *  prefix keeps it apart from agent terminals, which take their conversation's name. */

@@ -1,6 +1,9 @@
-// Turns the `orca` CLI's JSON into what the panel shows. Pure, so the tests feed it fixtures.
-import { result } from './orca/json'
-import type { AgentState, Project, PullRequest, Session } from './protocol'
+// The sessions and projects the overview shows, read from the `orca` CLI. The parsing is pure, so
+// the tests feed it fixtures.
+import { listProjects, listRepos, listWorkspaces } from '../orca/commands'
+import { result } from '../orca/json'
+import { tabPositions } from '../orca/stores'
+import type { AgentState, Project, PullRequest, Session } from '../protocol'
 
 type ProjectRow = {
   id?: string
@@ -207,4 +210,25 @@ export function parseProjects(projectsJson: string, reposJson: string, sessions:
         }
       ]
     })
+}
+
+/** The `orca` CLI output the overview is built from. */
+export type SessionsOutput = { projectsJson: string; reposJson: string; workspacesJson: string }
+
+export async function readSessions(): Promise<SessionsOutput> {
+  const [projectsJson, reposJson, workspacesJson] = await Promise.all([listProjects(), listRepos(), listWorkspaces()])
+  return { projectsJson, reposJson, workspacesJson }
+}
+
+/** The sessions, in the order of Orca's sidebar, and the projects with their agent counts. */
+export async function sessionsOf({ projectsJson, reposJson, workspacesJson }: SessionsOutput): Promise<{ sessions: Session[]; projects: Project[] }> {
+  const parsed = parseSessions(workspacesJson, projectsJson)
+  const sessions = orderLikeSidebar(parsed, workspaceRanks(workspacesJson), await tabPositions(parsed.map((s) => s.key.split(':')[0])))
+  return { sessions, projects: parseProjects(projectsJson, reposJson, sessions) }
+}
+
+/** The projects, without agent counts. */
+export async function projects(): Promise<Project[]> {
+  const [projectsJson, reposJson] = await Promise.all([listProjects(), listRepos()])
+  return parseProjects(projectsJson, reposJson, [])
 }
