@@ -1,4 +1,4 @@
-// Guards the folder rules in the README's Development section: which files may reach Orca, and
+// Guards the folder rules in docs/code-structure.md: which files may reach Orca, and
 // which may import which. A guard, not a linter: it reads each file's import specifiers and a few
 // call names.
 import { readdirSync, readFileSync } from 'node:fs'
