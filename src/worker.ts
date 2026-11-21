@@ -36,7 +36,6 @@ import {
   processFolders,
   processTerminal,
   relearnedUrl,
-  runCommand,
   saveAction,
   startStep,
   storedActions,
@@ -44,7 +43,7 @@ import {
   runStates
 } from './servers'
 import type { RunObservation, RunState } from './servers'
-import { chatSessionId } from './shared'
+import { chatSessionId, runCommand } from './shared'
 import { pullRequestInfo } from './pulls'
 import { sessionUsage } from './usage'
 

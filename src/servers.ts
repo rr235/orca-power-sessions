@@ -5,6 +5,7 @@
 // address is learned again from what the server prints at each start.
 import { terminalAlive, terminalByTitle } from './orca/terminals'
 import type { Project, QuickAction, QuickActionInput } from './protocol'
+import { runCommand } from './shared'
 import { normalUrl } from './url'
 
 /** The terminal title a quick action's terminal gets, so it is found again after a worker restart. The
@@ -74,10 +75,6 @@ export function printedUrl(lines: readonly string[]): string | null {
 }
 
 const tidy = (url: string) => url.replace('://0.0.0.0', '://localhost').replace(/[/.,;:]+$/, '')
-
-/** The command a terminal runs for an action's steps: each after the one before succeeds. One step
- *  is its command as typed. */
-export const runCommand = (steps: readonly string[]): string => steps.join(' && ')
 
 const isStep = (step: unknown): step is string => typeof step === 'string'
 

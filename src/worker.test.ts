@@ -1,7 +1,8 @@
 import { assert, test } from 'orca/testing'
 import { orderLikeSidebar, parseProjects, parseSessions, workspaceRanks } from './overview'
 import type { Project, QuickAction } from './protocol'
-import { linkProjects, listenerPids, listenersInFolder, portOf, printedUrl, processFolders, processTerminal, relearnedUrl, runCommand, saveAction, storedActions } from './servers'
+import { linkProjects, listenerPids, listenersInFolder, portOf, printedUrl, processFolders, processTerminal, relearnedUrl, saveAction, storedActions } from './servers'
+import { runCommand } from './shared'
 
 const PROJECTS = JSON.stringify({
   result: {

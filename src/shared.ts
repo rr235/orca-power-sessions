@@ -1,5 +1,9 @@
 // Pure helpers both the panel and the worker use. No Node imports: the panel bundles this file.
 
+/** The command a terminal runs for an action's steps: each after the one before succeeds. One step
+ *  is its command as typed. */
+export const runCommand = (steps: readonly string[]): string => steps.join(' && ')
+
 const CHAT_PANE = 'structured-agent-session-'
 const SAFE_ID = /^[A-Za-z0-9_-]+$/
 
