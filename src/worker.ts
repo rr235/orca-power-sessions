@@ -7,7 +7,7 @@ import { createConnection } from 'node:net'
 import type { OrcaWorkerApi } from 'orca/worker'
 import { run } from './cli'
 import { agentPanes, chatSessionId, defaultAgent, orderLikeSidebar, paneOfTerminal, parseProjects, parseSessions, terminalOfPane, terminalServing, workspaceRanks } from './overview'
-import type { Overview, Project, QuickAction, Server } from './protocol'
+import type { Overview, Project, QuickAction, ActionStatus } from './protocol'
 import {
   actionTerminals,
   commandRunning,
@@ -26,9 +26,9 @@ import {
   storedActions,
   terminalTail,
   terminalTitle,
-  watchServers
+  runStates
 } from './servers'
-import type { ServerObservation, ServerState } from './servers'
+import type { RunObservation, RunState } from './servers'
 import { pullRequestInfo } from './pulls'
 import { sessionUsage, tabPositions } from './usage'
 import { compactChat } from './chats'
@@ -36,15 +36,15 @@ import { focusTab, folderAt, selectedTab, tabCount } from './tabs'
 
 // The quick actions, as the person last saved them.
 const ACTIONS_KEY = 'quickActions'
-// Server id -> the terminal handle it was started in, kept across worker restarts.
+// Quick action id -> the terminal handle it was started in, kept across worker restarts.
 const HANDLES_KEY = 'serverTerminals'
 type Handles = Record<string, string>
-// Server id -> where the output of its latest start begins (null: read the tail), until it prints its address.
+// Quick action id -> where the output of its latest start begins (null: read the tail), until it prints its address.
 const STARTS_KEY = 'serverStarts'
 type Starts = Record<string, string | null>
 
 const PORT_TIMEOUT_MS = 400
-// How much of a server's terminal output is searched for the address it printed.
+// How much of a quick action's terminal output is searched for the address it printed.
 const OUTPUT_LINES = '400'
 
 function answersOn(host: string, port: number): Promise<boolean> {
@@ -116,7 +116,7 @@ export default function activate(orca: OrcaWorkerApi): void {
     })
   }
 
-  /** The stored quick actions; the default servers before anything was saved. */
+  /** The stored quick actions; the default actions before anything was saved. */
   async function actions(): Promise<QuickAction[]> {
     return storedActions(await orca.storage.get(ACTIONS_KEY)) ?? []
   }
@@ -137,7 +137,7 @@ export default function activate(orca: OrcaWorkerApi): void {
   /** A missing lsof or ps is logged, since it would otherwise look like a server with no terminal. */
   function logMissing(error: unknown): void {
     if ((error as { notFound?: boolean }).notFound) {
-      orca.log(`finding a server's terminal: ${(error as Error).message}`)
+      orca.log(`finding a quick action's terminal: ${(error as Error).message}`)
     }
   }
 
@@ -190,7 +190,7 @@ export default function activate(orca: OrcaWorkerApi): void {
     const running = async (terminal: string) => commandRunning(await processList(), paneOfTerminal(terminalsJson, terminal), terminal)
     return {
       commandRunning: running,
-      async observe(a: QuickAction, own: string | null, listening = false): Promise<ServerObservation> {
+      async observe(a: QuickAction, own: string | null, listening = false): Promise<RunObservation> {
         const port = portOf(a.url)
         let serving: string | null = null
         let sameFolder = false
@@ -207,11 +207,11 @@ export default function activate(orca: OrcaWorkerApi): void {
   }
 
   /** Save discovered terminals, including manual starts, and retain closed associations. */
-  function watchStates(list: QuickAction[], terminalsJson: string, observed: ServerObservation[]) {
+  function watchStates(list: QuickAction[], terminalsJson: string, observed: RunObservation[]) {
     return write(async () => {
       const known = await handles()
       const own = actionTerminals(await actions(), terminalsJson, known)
-      const watched = watchServers(list, own, observed)
+      const watched = runStates(list, own, observed)
       const live = Object.fromEntries(Object.entries(watched.terminals).filter((entry): entry is [string, string] => entry[1] !== null))
       const next = { ...known, ...live }
       if (JSON.stringify(next) !== JSON.stringify(known)) {
@@ -229,7 +229,7 @@ export default function activate(orca: OrcaWorkerApi): void {
     const started = await starts()
     const relearn = (a: QuickAction) => !(a.urlTyped && a.url) && (!a.url || a.id in started)
     const learned = new Map<string, string>()
-    // Server id -> the cursor read from and where that page ended, when it held no address.
+    // Quick action id -> the cursor read from and where that page ended, when it held no address.
     const paged = new Map<string, [string, string]>()
     await Promise.all(
       list.map(async (a) => {
@@ -254,7 +254,7 @@ export default function activate(orca: OrcaWorkerApi): void {
       })
     )
     if (paged.size) {
-      // The next refresh reads on from there, unless a start marked the server again meanwhile.
+      // The next refresh reads on from there, unless a start marked the action again meanwhile.
       await write(async () => {
         const current = await starts()
         const moved = [...paged].filter(([id, [from]]) => current[id] === from)
@@ -290,7 +290,7 @@ export default function activate(orca: OrcaWorkerApi): void {
     const ports = probe(terminalsJson, async () => agents)
     const observed = await Promise.all(list.map((a) => ports.observe(a, terminals[a.id] ?? null)))
     const { states } = await watchStates(list, terminalsJson, observed)
-    const servers: Server[] = list.map((a, index) => ({
+    const statuses: ActionStatus[] = list.map((a, index) => ({
       id: a.id,
       name: a.name,
       steps: a.steps,
@@ -298,11 +298,11 @@ export default function activate(orca: OrcaWorkerApi): void {
       url: a.url,
       ...states[index]
     }))
-    return { servers, projects: projectList, sessions }
+    return { servers: statuses, projects: projectList, sessions }
   }
 
-  /** The server's state now, with the terminal the panel started it in, asking lsof even when the port check fails. */
-  async function stateNow(a: QuickAction): Promise<ServerState & { own: string | null; commandRunning: boolean }> {
+  /** The quick action's run state now, with the terminal the panel started it in, asking lsof even when the port check fails. */
+  async function stateNow(a: QuickAction): Promise<RunState & { own: string | null; commandRunning: boolean }> {
     const [list, terminalsJson, known] = await Promise.all([actions(), run('orca', ['terminal', 'list', '--json']), handles()])
     const own = actionTerminals(list, terminalsJson, known)
     const mine = own[a.id] ?? null
@@ -323,7 +323,7 @@ export default function activate(orca: OrcaWorkerApi): void {
     }
   }
 
-  // One start per server at a time, so a double press opens one terminal.
+  // One start per quick action at a time, so a double press opens one terminal.
   const starting = new Map<string, Promise<null>>()
 
   async function start(a: QuickAction): Promise<null> {

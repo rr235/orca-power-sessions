@@ -1,9 +1,9 @@
 // A made-up overview for tests, `orca plugin check` and screenshots, so no real session shows.
-import type { Overview, Server, SessionUsage } from './protocol'
+import type { Overview, ActionStatus, SessionUsage } from './protocol'
 
 const now = Date.now()
 
-const server = (id: string, name: string, steps: string[], projectId: string | null, url: string | null, up: boolean, terminal: string | null = null): Server => ({
+const action = (id: string, name: string, steps: string[], projectId: string | null, url: string | null, up: boolean, terminal: string | null = null): ActionStatus => ({
   id,
   name,
   steps,
@@ -13,16 +13,16 @@ const server = (id: string, name: string, steps: string[], projectId: string | n
   terminal
 })
 
-const DEMO_SERVERS: Server[] = [
-  server('platform', 'Platform', ['bun run stack:up', 'bun run dev:platform'], 'github:mountin-io/platform', 'http://demo.localhost:3100', true, 'term_demo'),
-  server('primer', 'Primer', ['bun run dev:primer'], 'github:mountin-io/platform', 'http://localhost:3200', false),
-  server('website', 'Website', ['bun run dev:website'], 'github:mountin-io/platform', 'http://localhost:3300', true),
-  server('knowledgebase', 'KB', ['bun run dev'], null, 'http://localhost:3400', false),
-  server('blog', 'Blog', ['bun run dev'], 'github:rr235/blog', null, false)
+const DEMO_ACTIONS: ActionStatus[] = [
+  action('platform', 'Platform', ['bun run stack:up', 'bun run dev:platform'], 'github:mountin-io/platform', 'http://demo.localhost:3100', true, 'term_demo'),
+  action('primer', 'Primer', ['bun run dev:primer'], 'github:mountin-io/platform', 'http://localhost:3200', false),
+  action('website', 'Website', ['bun run dev:website'], 'github:mountin-io/platform', 'http://localhost:3300', true),
+  action('knowledgebase', 'KB', ['bun run dev'], null, 'http://localhost:3400', false),
+  action('blog', 'Blog', ['bun run dev'], 'github:rr235/blog', null, false)
 ]
 
 export const DEMO: Overview = {
-  servers: DEMO_SERVERS,
+  servers: DEMO_ACTIONS,
   sessions: [
     {
       key: 'p1',

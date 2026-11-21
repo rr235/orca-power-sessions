@@ -1,13 +1,13 @@
 // The quick actions: dev servers the panel starts. Each runs `command` in a terminal at `path`, the
 // main checkout of an Orca project. There are none built in: the person adds them in the panel, and
-// the worker keeps them in plugin storage. Each server is watched in one Orca terminal and counts as
-// running only while the process on its port was started in it (`serverState`). Unless typed, the
+// the worker keeps them in plugin storage. Each action is watched in one Orca terminal and counts as
+// running only while the process on its port was started in it (`runState`). Unless typed, the
 // address is learned again from what the server prints at each start.
 import { terminalAlive, terminalByTitle } from './overview'
 import type { Project, QuickAction, QuickActionInput } from './protocol'
 import { normalUrl } from './url'
 
-/** The terminal title a server's terminal gets, so it is found again after a worker restart. The
+/** The terminal title a quick action's terminal gets, so it is found again after a worker restart. The
  *  prefix keeps it apart from agent terminals, which take their conversation's name. */
 export const terminalTitle = (action: Pick<QuickAction, 'id' | 'name'>): string => `⚡ ${action.name} server (${action.id})`
 
@@ -239,15 +239,15 @@ export function processTerminal(output: string): ProcessTerminal {
   }
 }
 
-/** Observations of a server's listener and foreground command, read by the worker. */
-export type ServerObservation = {
+/** Observations of a quick action's listener and foreground command, read by the worker. */
+export type RunObservation = {
   serving: string | null
   inFolder: boolean
   commandRunning: boolean
 }
 
-/** Whether a server is running, and the Orca terminal it is watched in. Stop targets this terminal. */
-export type ServerState = { up: boolean; terminal: string | null }
+/** Whether a quick action is running, and the Orca terminal it is watched in. Stop targets this terminal. */
+export type RunState = { up: boolean; terminal: string | null }
 type WatchedAction = Pick<QuickAction, 'id' | 'path' | 'url'>
 
 /**
@@ -255,13 +255,13 @@ type WatchedAction = Pick<QuickAction, 'id' | 'path' | 'url'>
  * never proves that. Before a URL is known, a foreground command in that terminal is enough.
  * Only an action never watched can adopt a manually started server from its project folder.
  */
-export function serverState(
+export function runState(
   a: WatchedAction,
   own: Readonly<Record<string, string | null>>,
-  observed: ServerObservation
-): ServerState {
+  observed: RunObservation
+): RunState {
   const mine = own[a.id] ?? null
-  const stopped: ServerState = { up: false, terminal: mine }
+  const stopped: RunState = { up: false, terminal: mine }
   if (!portOf(a.url)) {
     return { up: mine !== null && observed.commandRunning, terminal: mine }
   }
@@ -276,14 +276,14 @@ export function serverState(
 }
 
 /** Reserve discovered terminals in action order, so two actions never adopt the same terminal. */
-export function watchServers(
+export function runStates(
   actions: readonly WatchedAction[],
   own: Readonly<Record<string, string | null>>,
-  observations: readonly ServerObservation[]
-): { states: ServerState[]; terminals: Record<string, string | null> } {
+  observations: readonly RunObservation[]
+): { states: RunState[]; terminals: Record<string, string | null> } {
   const terminals = { ...own }
   const states = actions.map((a, index) => {
-    const state = serverState(a, terminals, observations[index])
+    const state = runState(a, terminals, observations[index])
     if (state.terminal) {
       terminals[a.id] = state.terminal
     }
@@ -293,11 +293,11 @@ export function watchServers(
 }
 
 /**
- * What Run does: show the terminal of a running server, run the command again in its open terminal,
+ * What Run does: show the terminal of a running action, run the command again in its open terminal,
  * or open a new one. A terminal still running a command is only shown, so the command is never typed
  * into a server that is starting or listens on a port other than the one stored.
  */
-export function startStep(state: ServerState, own: string | null, commandRunning: boolean): 'show' | 'rerun' | 'create' {
+export function startStep(state: RunState, own: string | null, commandRunning: boolean): 'show' | 'rerun' | 'create' {
   if (own) {
     return state.up || commandRunning ? 'show' : 'rerun'
   }

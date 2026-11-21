@@ -1,10 +1,10 @@
 // Quick-action feedback and polling belong to one panel run and stop when that run ends.
 import { atom, read, set, update, type PanelContext } from 'orca'
-import type { Server } from './protocol'
+import type { ActionStatus } from './protocol'
 
 export const startingActions = atom<Record<string, true>>({})
 
-export function watchQuickActions(ctx: PanelContext, load: () => Promise<void>, servers: () => readonly Server[]) {
+export function watchQuickActions(ctx: PanelContext, load: () => Promise<void>, actions: () => readonly ActionStatus[]) {
   let disposed = false
   let reading: Promise<void> | null = null
   const bootTimers = new Set<ReturnType<typeof setTimeout>>()
@@ -18,7 +18,7 @@ export function watchQuickActions(ctx: PanelContext, load: () => Promise<void>, 
     if (disposed) {
       return
     }
-    if (left === 0 || servers().some((s) => s.id === id && s.up)) {
+    if (left === 0 || actions().some((s) => s.id === id && s.up)) {
       doneStarting(id)
       return
     }
@@ -30,9 +30,9 @@ export function watchQuickActions(ctx: PanelContext, load: () => Promise<void>, 
   }
 
   // Commands without an address use foreground-process state, so check their completion sooner.
-  // Address-based servers retain the panel's normal 15-second refresh cycle.
+  // Address-based actions retain the panel's normal 15-second refresh cycle.
   const commandTimer = setInterval(() => {
-    if (read(ctx.visible) && servers().some((s) => s.up && !s.url && s.terminal)) {
+    if (read(ctx.visible) && actions().some((s) => s.up && !s.url && s.terminal)) {
       void poll()
     }
   }, 2000)
