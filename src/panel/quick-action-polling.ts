@@ -1,6 +1,6 @@
 // Quick-action feedback and polling belong to one panel run and stop when that run ends.
 import { atom, read, set, update, type PanelContext } from 'orca'
-import type { ActionStatus } from './protocol'
+import type { ActionStatus } from '../protocol'
 
 export const startingActions = atom<Record<string, true>>({})
 
