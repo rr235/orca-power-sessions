@@ -98,6 +98,34 @@ test('quick actions show startup, completion and failure, and stop polling when 
   }
 })
 
+test('a change in the focused workspace reloads at once; the first report and a switch do not', async () => {
+  mock.timers.enable({ apis: ['setTimeout', 'setInterval'] })
+  let loads = 0
+  const host = mockHost({ requests: {
+    'overview.load': () => { loads++; return DEMO },
+    'session.selected': () => null
+  } })
+  const view = await mount(panel, { host })
+  const context = (workspaceId: string, ids: string[]) => ({ context: { workspaceId, branch: 'main', displayName: workspaceId, terminals: ids.map((id) => ({ id })) } })
+  const after = async (payload: ReturnType<typeof context>) => {
+    const before = loads
+    await view.emit('workspace.changed', payload)
+    mock.timers.tick(400)
+    await view.settled()
+    return loads - before
+  }
+  try {
+    assert.equal(await after(context('wt_a', ['t1', 't2'])), 0, 'the first report is the baseline')
+    assert.equal(await after(context('wt_a', ['t1', 't2'])), 1, 'a close, reported while the terminal is still listed')
+    assert.equal(await after(context('wt_a', ['t1'])), 1, 'a terminal closed')
+    assert.equal(await after(context('wt_b', ['t9'])), 0, 'a workspace switch')
+    assert.equal(await after(context('wt_b', ['t9', 't10'])), 1, 'a terminal opened')
+  } finally {
+    await view.unmount()
+    mock.timers.reset()
+  }
+})
+
 test('a slow command refresh completes without overlapping polls', async () => {
   mock.timers.enable({ apis: ['setTimeout', 'setInterval'] })
   let loads = 0

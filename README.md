@@ -73,7 +73,7 @@ A stopped action has an edit button to change or delete it.
 - **Context size.** Codex records its window. For Claude it is worked out as Claude Code does: the model's window, capped by an auto-compact window set in Claude Code's settings, `--autocompact` or `CLAUDE_CODE_AUTO_COMPACT_WINDOW`.
 - **Missing usage.** Usage is read only from Claude and Codex transcripts. When it is unknown, the details show NA and an empty context bar, and the turns line says why.
 - **Chats.** Orca names the workspace on screen but not its tab, so a chat opens its workspace, and the session you last opened from the panel stays marked while its workspace is on screen.
-- **Refresh.** While visible, the panel reloads every 15 seconds. Agent status changes and workspace creation or removal also trigger a reload. The refresh button beside **Sessions** collapses all details, except those in Favourites, and reloads.
+- **Refresh.** While visible, the panel reloads every 15 seconds. Agent status changes, workspace creation or removal, and any change in the focused workspace, such as a terminal closing, also trigger a reload. The refresh button beside **Sessions** collapses all details, except those in Favourites, and reloads.
 
 ## What it reads and runs
 
