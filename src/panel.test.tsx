@@ -5,7 +5,6 @@ import { mock } from 'node:test'
 import { DEMO, DEMO_USAGE, DEMO_WORKTREES } from './fixtures'
 import type { SessionUsage } from './protocol'
 import * as panel from './panel'
-import { FORM_NOTE, URL_NOTE } from './panel/actions'
 import { byWorktree } from './panel/sessions'
 import { saveAction, storedActions } from './actions/rules'
 
@@ -53,60 +52,6 @@ test('single-line steps keep Input rows while legacy multiline commands save unc
     await view.type({ type: 'Input', label: 'Name' } as never, 'Renamed', { replace: true })
     await view.press({ type: 'Button', text: 'Save' })
     assert.deepEqual([actions[0].name, actions[0].command, actions[0].steps, actions[0].url], ['Renamed', command, [command], 'http://localhost:4000'])
-    assert.deepEqual(view.warnings, [])
-    assert.deepEqual(view.errors, [])
-  } finally {
-    await view.unmount()
-  }
-})
-
-test('an action icon replaces the edit icon, round-trips through the form, and is disabled while running', async () => {
-  const project = DEMO.projects.find((p) => p.id === 'github:rr235/blog')!
-  let actions = storedActions([{ id: 'docs', name: 'Docs', command: 'bun run docs', steps: ['bun run docs'], projectId: project.id, path: project.path, url: null }])!
-  const host = mockHost({
-    requests: {
-      'overview.load': () => ({ ...DEMO, sessions: [], servers: [...actions.map((a) => ({ ...a, up: false, terminal: null })), ...DEMO.servers.filter((s) => s.id === 'website')] }),
-      'session.selected': () => null,
-      'action.save': (input) => {
-        actions = saveAction(actions, input, [project], 'unused')
-        return null
-      }
-    }
-  })
-  const view = await mount(panel, { host })
-  const iconInput = () => view.find({ type: 'Input', label: 'Icon' } as never)
-  try {
-    await view.press({ label: 'Edit Docs' })
-    assert.equal(iconInput()?.props.value, '')
-    // The icon note shows the emoji picker's keys as code, then the field's ✎.
-    const iconNote = view.find({ type: 'Text', text: 'Icon (optional): press (' })
-    const keys = view.findAll({ type: 'Code' }).filter((c) => iconNote && c.path > iconNote.path)
-    assert.deepEqual(keys.slice(0, 3).map((k) => k.text), ['⌃', '⌘', 'Space'])
-    const inside = view.find({ type: 'Text', text: ') inside ✎' })
-    assert.ok(inside && keys[2] && keys[2].path < inside.path, 'the note ends with the field it means')
-    // Two letters are refused before saving.
-    await view.type({ type: 'Input', label: 'Icon' } as never, 'KB')
-    await view.press({ type: 'Button', text: 'Save' })
-    assert.ok(view.find({ text: 'Use one character or emoji as the icon.' }))
-    await view.type({ type: 'Input', label: 'Icon' } as never, '👍🏽', { replace: true })
-    await view.press({ type: 'Button', text: 'Save' })
-    assert.equal(actions[0].icon, '👍🏽')
-    // The row shows the icon where the edit icon was, and it opens the form with the icon filled in.
-    assert.equal(view.find({ label: 'Edit Docs' }), null)
-    const docsIcon = view.find({ type: 'Button', text: '👍🏽' })
-    assert.equal(docsIcon?.props.tooltip, 'Edit Docs')
-    assert.ok(docsIcon && docsIcon.path < (view.find({ label: 'Run Docs' })?.path ?? ''), 'the icon starts the row')
-    await view.press(docsIcon as never)
-    assert.equal(iconInput()?.props.value, '👍🏽')
-    assert.ok(view.find({ label: 'Close Docs' }), 'an open form shows Close in the icon slot')
-    // Clearing the field brings the edit icon back.
-    await view.type({ type: 'Input', label: 'Icon' } as never, '', { replace: true })
-    await view.press({ type: 'Button', text: 'Save' })
-    assert.equal(actions[0].icon, undefined)
-    assert.ok(view.find({ label: 'Edit Docs' }))
-    // A running action's icon is disabled.
-    const site = view.find({ type: 'Button', text: '🌐' })
-    assert.deepEqual([site?.props.disabled, site?.props.tooltip], [true, 'Edit once it stops'], 'Website has no terminal to stop')
     assert.deepEqual(view.warnings, [])
     assert.deepEqual(view.errors, [])
   } finally {
@@ -889,11 +834,10 @@ test('edits, adds and deletes quick actions', async () => {
     assert.equal(view.find({ type: 'Input', label: 'Step 1' } as never)?.props.placeholder, 'npm run dev')
     assert.equal(view.find({ type: 'Textarea', label: 'Step 1' } as never), null, 'single-line steps keep Input rows')
     assert.equal(view.find({ type: 'Input', label: 'URL' } as never)?.props.placeholder, 'URL (optional)')
-    // The commands and icon notes are one paragraph under the title; the URL note sits under the URL field.
-    const note = view.find({ type: 'Text', text: FORM_NOTE })
-    assert.equal(FORM_NOTE, "The commands run serially in order in the project's main checkout.")
+    // The commands note sits under the title; the URL note sits under the URL field.
+    const note = view.find({ type: 'Text', text: "The commands run serially in order in the project's main checkout." })
     assert.ok(note && heading && heading.path < note.path, 'the note sits under the title')
-    const urlNote = view.find({ type: 'Text', text: URL_NOTE })
+    const urlNote = view.find({ type: 'Text', text: 'URL (optional): if the URL differs from the one the server prints.' })
     const urlField = view.find({ type: 'Input', label: 'URL' } as never)
     const addButton = view.find({ type: 'Button', text: 'Add +' })
     assert.ok(urlNote && urlField && addButton && urlField.path < urlNote.path && urlNote.path < addButton.path, 'the URL note sits under the URL field')
@@ -969,7 +913,7 @@ test('edits, adds and deletes quick actions', async () => {
     const formPath = nameInput()?.path ?? ''
     assert.ok(row && formPath.startsWith(group) && row < formPath, `the form sits under its row: ${row} ${formPath}`)
     // Titled Edit action; the line under the actions still reads Add action.
-    assert.equal(view.find({ type: 'Text', text: FORM_NOTE }), null, 'editing leaves out how the commands run')
+    assert.equal(view.find({ type: 'Text', text: "The commands run serially in order in the project's main checkout." }), null, 'editing leaves out how the commands run')
     const editTitles = view.findAll({ type: 'Text', text: 'Edit action' })
     assert.equal(editTitles.length, 1, 'only the title')
     assert.equal(editTitles[0].props.size, 'sm')

@@ -156,9 +156,6 @@ export function ActionCard({ action }: { action: ActionStatus }) {
 
 // Button slots stay the same width whether occupied or empty.
 const SLOT_PX = 24
-// The muted note under the form's title, and the one under the URL field.
-export const FORM_NOTE = "The commands run serially in order in the project's main checkout."
-export const URL_NOTE = 'URL (optional): if the URL differs from the one the server prints.'
 // The icon field, in pixels: room for one emoji and the input's padding.
 const ICON_FIELD_PX = 40
 
@@ -233,7 +230,7 @@ export function ActionForm({ id, actions, projects }: { id: string | null; actio
             run is said only when adding an action. */}
         {action ? null : (
           <Text size="xs" muted>
-            {FORM_NOTE}
+            The commands run serially in order in the project's main checkout.
           </Text>
         )}
         {/* The emoji picker's keys, each as code, and the icon field's ✎ placeholder; wraps on a narrow panel. */}
@@ -270,7 +267,7 @@ export function ActionForm({ id, actions, projects }: { id: string | null; actio
         </Box>
         <Box grow minWidth={0} width="50%" direction="row" align="center" gap="xs">
           <Box width={ICON_FIELD_PX} minWidth={ICON_FIELD_PX} shrink={false}>
-            <Input label="Icon" labelHidden value={d.icon} placeholder="✎" maxLength={16} onChange={(icon) => edit({ icon })} />
+            <Input label="Icon" labelHidden value={d.icon} placeholder="✎" onChange={(icon) => edit({ icon })} />
           </Box>
           <Box grow minWidth={0}>
             <Input label="Name" labelHidden value={d.name} placeholder="Name" maxLength={40} onChange={(name) => edit({ name })} />
@@ -285,7 +282,7 @@ export function ActionForm({ id, actions, projects }: { id: string | null; actio
           <Input label="URL" labelHidden value={d.url} placeholder="URL (optional)" onChange={(url) => edit({ url })} />
           <Box paddingX="sm">
             <Text size="xs" muted>
-              {URL_NOTE}
+              URL (optional): if the URL differs from the one the server prints.
             </Text>
           </Box>
         </Box>
