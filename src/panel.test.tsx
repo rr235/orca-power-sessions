@@ -840,10 +840,10 @@ test('edits, adds and deletes quick actions', async () => {
     assert.ok(view.find({ label: 'Run Primer' }), 'Quick actions stay while Sessions is closed')
     await view.press(sessionsHeader() as never)
     allInView()
-    // Run comes first in an action's row.
+    // Run comes last in an action's row.
     const run = view.find({ label: 'Run Primer' })
     const primerName = view.find({ type: 'Text', text: 'Primer' })
-    assert.ok(run && primerName && run.path < primerName.path, 'Run comes before the name')
+    assert.ok(run && primerName && primerName.path < run.path, 'Run comes after the name')
     const icons = view.findAll({ type: 'Image' }).length
     // The Sessions title carries the smallest refresh button, which closes every session's details.
     const refreshButton = view.find({ type: 'IconButton', label: 'Refresh sessions' })
@@ -930,11 +930,11 @@ test('edits, adds and deletes quick actions', async () => {
     assert.equal(nameInput(), null, 'saving closes the form')
     saved.length = 0
 
-    // A stopped action's row ends with an edit button; a running one has none, and there is no Edit quick actions.
+    // A stopped action's row starts with an edit button and ends with Run; a running one's edit button is disabled, and there is no Edit quick actions.
     assert.equal(view.find({ label: 'Edit quick actions' }), null)
-    assert.equal(view.find({ label: 'Edit Platform' }), null, 'Platform is running')
+    assert.equal(view.find({ label: 'Edit Platform' })?.props.disabled, true, 'Platform is running')
     const editPrimer = view.find({ label: 'Edit Primer' })
-    assert.ok(editPrimer && (view.find({ label: 'Run Primer' })?.path ?? '') < editPrimer.path, 'edit sits at the right of the row')
+    assert.ok(editPrimer && editPrimer.path < (view.find({ label: 'Run Primer' })?.path ?? ''), 'edit sits at the left of the row, run at the right')
 
     // Its form opens under its row, where Edit was pressed, and the row's button closes it.
     await view.press(view.find({ label: 'Edit Primer' }) as never)

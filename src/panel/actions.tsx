@@ -61,7 +61,7 @@ export function ActionCard({ action }: { action: ActionStatus }) {
   const pending = Boolean(read(busy)[`run:${action.id}`])
   const ours = Boolean(action.terminal)
   const editingThis = read(editing) === action.id
-  // Run and Stop share the first slot; an action with no Orca terminal to close, such as a dev server under pm2 or an agent, has nothing to stop.
+  // Run and Stop share the last slot; an action with no Orca terminal to close, such as a dev server under pm2 or an agent, has nothing to stop.
   // Between Run and the action showing as running, Stop shows disabled.
   const control = !action.up && read(startingActions)[action.id] ? (
     <IconButton icon="stop" label={`Stop ${action.name}`} tooltip="Starting" size="xs" variant="ghost" disabled onPress={() => undefined} />
@@ -81,8 +81,20 @@ export function ActionCard({ action }: { action: ActionStatus }) {
   ) : null
   return (
     <Box direction="row" align="center" gap="xs">
-      <Box direction="row" align="center" justify="center" width={CONTROL_PX} minWidth={CONTROL_PX} shrink={false}>
-        {control}
+      {/* The edit button, whose form opens under the row and which then closes it. A running action shows it disabled. */}
+      <Box direction="row" align="center" justify="center" width={SLOT_PX} minWidth={SLOT_PX} shrink={false}>
+        {action.up ? (
+          <IconButton icon="edit" label={`Edit ${action.name}`} tooltip="Stop to edit" size="xs" variant="ghost" disabled onPress={() => undefined} />
+        ) : (
+          <IconButton
+            icon={editingThis ? 'close' : 'edit'}
+            label={editingThis ? `Close ${action.name}` : `Edit ${action.name}`}
+            tooltip={editingThis ? 'Close edit action' : undefined}
+            size="xs"
+            variant="ghost"
+            onPress={() => (editingThis ? closeForm() : editAction(action))}
+          />
+        )}
       </Box>
       {/* The name takes the free space, so the other buttons sit at the right edge. */}
       <Box grow minWidth={0}>
@@ -104,30 +116,23 @@ export function ActionCard({ action }: { action: ActionStatus }) {
           onPress={() => openAction(action)}
         />
       ) : null}
-      {/* The row ends with the green dot of a running action, the same as a working session's, or the
-          edit button of a stopped one, whose form opens under the row and which then closes it. */}
+      {/* A running action shows the green dot of a working session, just before its Stop button. */}
       {action.up ? (
         <Box direction="row" align="center" justify="center" width={DOT_PX} minWidth={DOT_PX} shrink={false}>
           <Text size="xs" tone="success">
             ●
           </Text>
         </Box>
-      ) : (
-        <IconButton
-          icon={editingThis ? 'close' : 'edit'}
-          label={editingThis ? `Close ${action.name}` : `Edit ${action.name}`}
-          tooltip={editingThis ? 'Close edit action' : undefined}
-          size="xs"
-          variant="ghost"
-          onPress={() => (editingThis ? closeForm() : editAction(action))}
-        />
-      )}
+      ) : null}
+      <Box direction="row" align="center" justify="center" width={SLOT_PX} minWidth={SLOT_PX} shrink={false}>
+        {control}
+      </Box>
     </Box>
   )
 }
 
-// The Run or Stop slot, in pixels, so every name starts at the same place.
-const CONTROL_PX = 24
+// The edit slot and the Run or Stop slot, in pixels, so names start and controls sit at the same place on every row.
+const SLOT_PX = 24
 
 /** A muted label with its icon button right after it, on a line of its own. */
 export function LabelledButton({ text, icon, tooltip, onPress }: { text: string; icon: 'add' | 'close'; tooltip?: string; onPress: () => void }) {
