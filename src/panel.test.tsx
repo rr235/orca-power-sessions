@@ -894,6 +894,8 @@ test('edits, adds and deletes quick actions', async () => {
     // A stopped action's row starts with an edit button and ends with Run; a running one's edit button is disabled, and there is no Edit quick actions.
     assert.equal(view.find({ label: 'Edit quick actions' }), null)
     assert.equal(view.find({ label: 'Edit Platform' })?.props.disabled, true, 'Platform is running')
+    assert.equal(view.find({ label: 'Edit Platform' })?.props.tooltip, 'Stop to edit', 'Platform has a Stop button')
+    assert.equal(view.find({ label: 'Edit Website' })?.props.tooltip, 'Edit once it stops', 'Website has no terminal to stop')
     const editPrimer = view.find({ label: 'Edit Primer' })
     assert.ok(editPrimer && editPrimer.path < (view.find({ label: 'Run Primer' })?.path ?? ''), 'edit sits at the left of the row, run at the right')
 

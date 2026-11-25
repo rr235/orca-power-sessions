@@ -81,10 +81,19 @@ export function ActionCard({ action }: { action: ActionStatus }) {
   ) : null
   return (
     <Box direction="row" align="center" gap="xs">
-      {/* The edit button, whose form opens under the row and which then closes it. A running action shows it disabled. */}
+      {/* The edit button, whose form opens under the row and which then closes it. A running action shows it
+          disabled, and says to stop it first only when the row has a Stop button. */}
       <Box direction="row" align="center" justify="center" width={SLOT_PX} minWidth={SLOT_PX} shrink={false}>
         {action.up ? (
-          <IconButton icon="edit" label={`Edit ${action.name}`} tooltip="Stop to edit" size="xs" variant="ghost" disabled onPress={() => undefined} />
+          <IconButton
+            icon="edit"
+            label={`Edit ${action.name}`}
+            tooltip={ours ? 'Stop to edit' : 'Edit once it stops'}
+            size="xs"
+            variant="ghost"
+            disabled
+            onPress={() => undefined}
+          />
         ) : (
           <IconButton
             icon={editingThis ? 'close' : 'edit'}
@@ -121,7 +130,8 @@ export function ActionCard({ action }: { action: ActionStatus }) {
           />
         ) : null}
       </Box>
-      {/* A running action shows the green dot of a working session, just before its Stop button. */}
+      {/* A running action shows the green dot of a working session, just before the Stop slot (empty when
+          there is no Orca terminal to close). */}
       <Box direction="row" align="center" justify="center" width={DOT_PX} minWidth={DOT_PX} shrink={false}>
         {action.up ? (
           <Text size="xs" tone="success">
