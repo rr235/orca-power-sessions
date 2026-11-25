@@ -94,6 +94,7 @@ export function quickActions(orca: OrcaWorkerApi) {
       steps: a.steps,
       projectId: a.projectId,
       url: a.url,
+      ...(a.icon ? { icon: a.icon } : {}),
       ...states[index]
     }))
   }

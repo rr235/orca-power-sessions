@@ -16,8 +16,8 @@ const action = (id: string, name: string, steps: string[], projectId: string | n
 const DEMO_ACTIONS: ActionStatus[] = [
   action('platform', 'Platform', ['bun run stack:up', 'bun run dev:platform'], 'github:mountin-io/platform', 'http://demo.localhost:3100', true, 'term_demo'),
   action('primer', 'Primer', ['bun run dev:primer'], 'github:mountin-io/platform', 'http://localhost:3200', false),
-  action('website', 'Website', ['bun run dev:website'], 'github:mountin-io/platform', 'http://localhost:3300', true),
-  action('knowledgebase', 'KB', ['bun run dev'], null, 'http://localhost:3400', false),
+  { ...action('website', 'Website', ['bun run dev:website'], 'github:mountin-io/platform', 'http://localhost:3300', true), icon: '🌐' },
+  { ...action('knowledgebase', 'KB', ['bun run dev'], null, 'http://localhost:3400', false), icon: '📚' },
   action('blog', 'Blog', ['bun run dev'], 'github:rr235/blog', null, false)
 ]
 

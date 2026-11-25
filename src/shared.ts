@@ -4,6 +4,11 @@
  *  is its command as typed. */
 export const runCommand = (steps: readonly string[]): string => steps.join(' && ')
 
+/** Whether `text` is one visible character, such as `K` or an emoji like 👍🏽 or 🇮🇳 that spans several code points. */
+export function isOneCharacter(text: string): boolean {
+  return [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(text)].length === 1
+}
+
 /**
  * A typed quick action address as the panel stores it: `localhost:3000` becomes `http://localhost:3000`,
  * and a trailing slash goes. Null when it is not an http or https address. Shared by the panel,

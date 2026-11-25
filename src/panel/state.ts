@@ -58,8 +58,8 @@ export const editing = atom<string | null>(null)
 export const closeForm = () => set(editing, null)
 // What the form holds, apart from the overview, so a refresh never replaces what is being typed.
 // `steps` holds one entry per command row, at least one.
-export type Draft = { name: string; steps: string[]; projectId: string; url: string }
-export const draft = atom<Draft>({ name: '', steps: [''], projectId: '', url: '' })
+export type Draft = { name: string; steps: string[]; projectId: string; url: string; icon: string }
+export const draft = atom<Draft>({ name: '', steps: [''], projectId: '', url: '', icon: '' })
 export const formError = atom<string | null>(null)
 export const actionError = atom<string | null>(null)
 

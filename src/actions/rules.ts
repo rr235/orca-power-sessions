@@ -5,7 +5,7 @@
 // address is learned again from what the server prints at each start.
 import { terminalAlive, terminalByTitle } from '../orca/terminals'
 import type { Project, QuickAction, QuickActionInput } from '../protocol'
-import { normalUrl, runCommand } from '../shared'
+import { isOneCharacter, normalUrl, runCommand } from '../shared'
 
 /** The terminal title a quick action's terminal gets, so it is found again after a worker restart. The
  *  prefix keeps it apart from agent terminals, which take their conversation's name. */
@@ -115,7 +115,7 @@ const invalid = (message: string) => Object.assign(new Error(message), { code: '
 /**
  * The list with `input` added, or replacing the action with its id. A typed `url` is the address
  * (empty: read it at the next Run); without one, new steps or a new project forget the address the
- * server printed. Empty steps are dropped.
+ * server printed. Empty steps are dropped. An `icon` is one character or emoji.
  */
 export function saveAction(actions: QuickAction[], input: QuickActionInput, projects: readonly Project[], newId: string): QuickAction[] {
   const name = input.name.trim()
@@ -131,12 +131,17 @@ export function saveAction(actions: QuickAction[], input: QuickActionInput, proj
   if (!project?.path) {
     throw invalid('Choose a project with a main checkout.')
   }
+  const icon = typeof input.icon === 'string' ? input.icon.trim() : undefined
+  if (icon && !isOneCharacter(icon)) {
+    throw invalid('An icon is one character or emoji.')
+  }
   const existing = input.id ? actions.find((a) => a.id === input.id) : undefined
   if (input.id && !existing) {
     throw invalid(`Unknown quick action ${input.id}`)
   }
   if (!existing) {
-    return [...actions, { id: newId, name, steps, command: runCommand(steps), projectId: project.id, path: project.path, url: typed ?? null, urlTyped: Boolean(typed) }]
+    const added: QuickAction = { id: newId, name, steps, command: runCommand(steps), projectId: project.id, path: project.path, url: typed ?? null, urlTyped: Boolean(typed) }
+    return [...actions, icon ? { ...added, icon } : added]
   }
   const moved = existing.projectId !== project.id || existing.path !== project.path
   // The form sends back the address it showed: unchanged, it is still printed or typed as before.
@@ -153,6 +158,13 @@ export function saveAction(actions: QuickAction[], input: QuickActionInput, proj
     path: project.path,
     url,
     urlTyped: Boolean(url) && (typedNew || keepsTyped)
+  }
+  // Without `icon` the action keeps its icon; an empty one removes it.
+  if (icon !== undefined) {
+    delete next.icon
+    if (icon) {
+      next.icon = icon
+    }
   }
   return actions.map((a) => (a.id === existing.id ? next : a))
 }

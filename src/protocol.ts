@@ -20,11 +20,14 @@ export type QuickAction = {
   url: string | null
   /** The person typed `url`: a start never replaces it with a printed one. */
   urlTyped?: boolean
+  /** One character or emoji the row shows in place of the edit icon. */
+  icon?: string
 }
 
 /** What the panel sends to add (no `id`) or change a quick action. */
-/** `url` set (even empty) replaces the address: empty means read it from the output at the next Run. */
-export type QuickActionInput = { id?: string; name: string; steps: string[]; projectId: string; url?: string }
+/** `url` set (even empty) replaces the address: empty means read it from the output at the next Run.
+ *  `icon` set (even empty) replaces the icon: empty removes it. */
+export type QuickActionInput = { id?: string; name: string; steps: string[]; projectId: string; url?: string; icon?: string }
 
 /**
  * A quick action as the panel lists it: `up` whether its listener belongs to the watched Orca terminal
@@ -37,6 +40,8 @@ export type ActionStatus = {
   steps: string[]
   projectId: string | null
   url: string | null
+  /** One character or emoji shown in place of the edit icon. */
+  icon?: string
   up: boolean
   terminal: string | null
 }
