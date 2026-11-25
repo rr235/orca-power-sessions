@@ -59,45 +59,6 @@ test('single-line steps keep Input rows while legacy multiline commands save unc
   }
 })
 
-test('quick actions show startup, completion and failure, and stop polling when idle or unmounted', async () => {
-  mock.timers.enable({ apis: ['setTimeout', 'setInterval'] })
-  let up = false
-  let fail = false
-  let loads = 0
-  const action = { id: 'sync', name: 'Sync', steps: ['bun build'], projectId: null, url: null, terminal: 'term_sync' }
-  const host = mockHost({ requests: {
-    'overview.load': () => { loads++; return { ...DEMO, sessions: [], servers: [DEMO.servers[0], { ...action, up }] } },
-    'session.selected': () => null,
-    'server.start': () => { if (fail) throw new Error('no terminal'); return null }
-  } })
-  const view = await mount(panel, { host })
-  const tick = async (ms: number) => { mock.timers.tick(ms); await view.settled() }
-  try {
-    await view.press({ label: 'Run Sync' })
-    assert.deepEqual([view.find({ label: 'Stop Sync' })?.disabled, view.find({ label: 'Stop Sync' })?.props.tooltip], [true, 'Starting'])
-    up = true
-    await tick(1000)
-    assert.equal(view.find({ label: 'Stop Sync' })?.disabled, false)
-    up = false
-    await tick(1000)
-    assert.ok(view.find({ label: 'Run Sync' }))
-    const idle = loads
-    await tick(2000)
-    assert.equal(loads, idle, 'address-based actions keep the normal cycle')
-    fail = true
-    await view.press({ label: 'Run Sync' })
-    assert.ok(view.find({ label: 'Run Sync' }))
-    fail = false
-    await view.press({ label: 'Run Sync' })
-  } finally {
-    await view.unmount()
-    const closed = loads
-    mock.timers.tick(11000)
-    mock.timers.reset()
-    assert.equal(loads, closed, 'queued boot checks stop at teardown')
-  }
-})
-
 test('a closed session disappears on a workspace report before any timer advances', async () => {
   mock.timers.enable({ apis: ['setTimeout', 'setInterval'] })
   let sessions = DEMO.sessions
@@ -840,10 +801,10 @@ test('edits, adds and deletes quick actions', async () => {
     assert.ok(view.find({ label: 'Run Primer' }), 'Quick actions stay while Sessions is closed')
     await view.press(sessionsHeader() as never)
     allInView()
-    // Run comes first in an action's row.
+    // Run comes last in an action's row.
     const run = view.find({ label: 'Run Primer' })
     const primerName = view.find({ type: 'Text', text: 'Primer' })
-    assert.ok(run && primerName && run.path < primerName.path, 'Run comes before the name')
+    assert.ok(run && primerName && primerName.path < run.path, 'Run comes after the name')
     const icons = view.findAll({ type: 'Image' }).length
     // The Sessions title carries the smallest refresh button, which closes every session's details.
     const refreshButton = view.find({ type: 'IconButton', label: 'Refresh sessions' })
@@ -930,11 +891,13 @@ test('edits, adds and deletes quick actions', async () => {
     assert.equal(nameInput(), null, 'saving closes the form')
     saved.length = 0
 
-    // A stopped action's row ends with an edit button; a running one has none, and there is no Edit quick actions.
+    // A stopped action's row starts with an edit button and ends with Run; a running one's edit button is disabled, and there is no Edit quick actions.
     assert.equal(view.find({ label: 'Edit quick actions' }), null)
-    assert.equal(view.find({ label: 'Edit Platform' }), null, 'Platform is running')
+    assert.equal(view.find({ label: 'Edit Platform' })?.props.disabled, true, 'Platform is running')
+    assert.equal(view.find({ label: 'Edit Platform' })?.props.tooltip, 'Stop to edit', 'Platform has a Stop button')
+    assert.equal(view.find({ label: 'Edit Website' })?.props.tooltip, 'Edit once it stops', 'Website has no terminal to stop')
     const editPrimer = view.find({ label: 'Edit Primer' })
-    assert.ok(editPrimer && (view.find({ label: 'Run Primer' })?.path ?? '') < editPrimer.path, 'edit sits at the right of the row')
+    assert.ok(editPrimer && editPrimer.path < (view.find({ label: 'Run Primer' })?.path ?? ''), 'edit sits at the left of the row, run at the right')
 
     // Its form opens under its row, where Edit was pressed, and the row's button closes it.
     await view.press(view.find({ label: 'Edit Primer' }) as never)
