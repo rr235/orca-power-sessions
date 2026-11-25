@@ -52,7 +52,8 @@ Apart from that first agent in an empty checkout, Power Sessions does not create
 1. Press the **+** beside **Add action**, below the session list.
 2. Pick a project, then enter a name and a command, such as `bun run dev`. For more steps, such as
    `bun install` first, press **Add step +**.
-3. Add a URL only if it differs from the one the server prints.
+3. Optionally, add a URL if it differs from the one the server prints, and an icon, such as 🚀, to
+   show instead of the edit icon.
 4. Press **Add +**, then the action’s **Run** button.
 
 The steps run in order in the project’s main checkout, each once the one before succeeds, in one
@@ -64,7 +65,8 @@ Its controls show the server's terminal, stop it by closing that terminal, and o
 known. An action that has not watched a terminal yet can discover a server you started yourself
 in an Orca terminal, from the project's folder. It then keeps watching that terminal, including
 after the server stops. One started outside Orca, or by an agent, does not show as running.
-A stopped action has an edit button to change or delete it.
+A stopped action has an edit button to change or delete it. Give an action an icon, one character
+or emoji, and its edit button shows that icon instead.
 
 ## Good to know
 

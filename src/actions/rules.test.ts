@@ -94,6 +94,23 @@ test('saves a new or changed action, forgetting what no longer holds', () => {
   assert.throws(() => saveAction(linked, { name: 'Web', steps: ['x'], projectId: 'p-cloud' }, PROJECT_LIST, 'x'))
 })
 
+test('saves one character or emoji as an action icon, keeps it unless sent, and removes an empty one', () => {
+  const linked = linkProjects([WEB], PROJECT_LIST)
+  const add = (icon: string) => saveAction(linked, { name: 'Docs', steps: ['x'], projectId: 'p-web', icon }, PROJECT_LIST, 'd')[1].icon
+  assert.equal(add(' K '), 'K')
+  for (const emoji of ['🚀', '👍🏽', '🇮🇳', '👨‍👩‍👧']) {
+    assert.equal(add(emoji), emoji, `${emoji} is one character`)
+  }
+  assert.equal(add(''), undefined)
+  assert.throws(() => add('KB'), /one character or emoji/)
+  assert.throws(() => add('🚀🚀'), /one character or emoji/)
+  const withIcon = saveAction(linked, { id: 'web', name: 'Web', steps: ['bun run dev'], projectId: 'p-web', icon: '🌐' }, PROJECT_LIST, 'x')
+  assert.equal(withIcon[0].icon, '🌐')
+  assert.equal(saveAction(withIcon, { id: 'web', name: 'Site', steps: ['bun run dev'], projectId: 'p-web' }, PROJECT_LIST, 'x')[0].icon, '🌐', 'kept when not sent')
+  assert.ok(!('icon' in saveAction(withIcon, { id: 'web', name: 'Web', steps: ['bun run dev'], projectId: 'p-web', icon: ' ' }, PROJECT_LIST, 'x')[0]), 'removed when empty')
+  assert.deepEqual(storedActions(withIcon), withIcon, 'read back as saved')
+})
+
 test('reads a server process and the terminal it was started in', () => {
   assert.deepEqual(listenerPids('12320\n12320\n\n1\n'), [12320], 'once each, never launchd')
   assert.deepEqual(listenerPids(''), [])

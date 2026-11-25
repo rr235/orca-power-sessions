@@ -1,8 +1,8 @@
 // Quick actions in the panel: a card per action with Run, Stop, Show and Open, and the form that
 // adds or edits one, with a row per step.
-import { Box, Button, IconButton, Input, plugin, read, Select, set, shell, Text, Textarea, update } from 'orca'
+import { Box, Button, Code, IconButton, Input, plugin, read, Select, set, shell, Text, Textarea, update } from 'orca'
 import type { ActionStatus, Project, QuickActionInput } from '../protocol'
-import { normalUrl, runCommand } from '../shared'
+import { isOneCharacter, normalUrl, runCommand } from '../shared'
 import { startingActions } from './quick-action-polling'
 import { DOT_PX } from './sessions'
 import { act, actionError, busy, closeForm, draft, editing, formError, NEW_ACTION, startAction } from './state'
@@ -15,7 +15,7 @@ const stopAction = (action: ActionStatus) =>
 
 /** Opens the form for an action, or for a new one. */
 export function editAction(action: ActionStatus | null): void {
-  set(draft, { name: action?.name ?? '', steps: action?.steps ?? [''], projectId: action?.projectId ?? '', url: action?.url ?? '' })
+  set(draft, { name: action?.name ?? '', steps: action?.steps ?? [''], projectId: action?.projectId ?? '', url: action?.url ?? '', icon: action?.icon ?? '' })
   set(formError, null)
   set(editing, action?.id ?? NEW_ACTION)
 }
@@ -31,6 +31,9 @@ export function draftProblem(d: Draft): string | null {
   if (!d.steps.some((step) => step.trim())) {
     return 'Give it a command.'
   }
+  if (d.icon.trim() && !isOneCharacter(d.icon.trim())) {
+    return 'Use one character or emoji as the icon.'
+  }
   // The address is optional: empty, it is read from the server's output at the next Run.
   return !d.url.trim() || normalUrl(d.url) ? null : 'Give it a web address, such as localhost:3000.'
 }
@@ -43,7 +46,7 @@ async function saveDraft(id: string | null): Promise<void> {
     return
   }
   const steps = d.steps.map((step) => step.trim()).filter(Boolean)
-  const input: QuickActionInput = { name: d.name, steps, projectId: d.projectId, url: d.url, ...(id ? { id } : {}) }
+  const input: QuickActionInput = { name: d.name, steps, projectId: d.projectId, url: d.url, icon: d.icon, ...(id ? { id } : {}) }
   await act('action:save', () => plugin.request('action.save', input), `Could not save ${d.name.trim()}.`)
   if (!read(actionError)) {
     closeForm()
@@ -61,6 +64,8 @@ export function ActionCard({ action }: { action: ActionStatus }) {
   const pending = Boolean(read(busy)[`run:${action.id}`])
   const ours = Boolean(action.terminal)
   const editingThis = read(editing) === action.id
+  // A running action edits once stopped; only a row with a Stop button can say to press it.
+  const runningTip = ours ? 'Stop to edit' : 'Edit once it stops'
   // Run and Stop share the last slot; an action with no Orca terminal to close, such as a dev server under pm2 or an agent, has nothing to stop.
   // Between Run and the action showing as running, Stop shows disabled.
   const control = !action.up && read(startingActions)[action.id] ? (
@@ -82,18 +87,21 @@ export function ActionCard({ action }: { action: ActionStatus }) {
   return (
     <Box direction="row" align="center" gap="xs">
       {/* The edit button, whose form opens under the row and which then closes it. A running action shows it
-          disabled, and says to stop it first only when the row has a Stop button. */}
+          disabled, and says to stop it first only when the row has a Stop button. An action with an icon shows
+          its icon in place of the edit one, except while its form is open. */}
       <Box direction="row" align="center" justify="center" width={SLOT_PX} minWidth={SLOT_PX} shrink={false}>
-        {action.up ? (
-          <IconButton
-            icon="edit"
-            label={`Edit ${action.name}`}
-            tooltip={ours ? 'Stop to edit' : 'Edit once it stops'}
+        {action.icon && !editingThis ? (
+          <Button
             size="xs"
             variant="ghost"
-            disabled
-            onPress={() => undefined}
-          />
+            tooltip={action.up ? runningTip : `Edit ${action.name}`}
+            disabled={action.up}
+            onPress={() => editAction(action)}
+          >
+            {action.icon}
+          </Button>
+        ) : action.up ? (
+          <IconButton icon="edit" label={`Edit ${action.name}`} tooltip={runningTip} size="xs" variant="ghost" disabled onPress={() => undefined} />
         ) : (
           <IconButton
             icon={editingThis ? 'close' : 'edit'}
@@ -148,6 +156,8 @@ export function ActionCard({ action }: { action: ActionStatus }) {
 
 // Button slots stay the same width whether occupied or empty.
 const SLOT_PX = 24
+// The icon field, in pixels: room for one emoji and the input's padding.
+const ICON_FIELD_PX = 40
 
 /** A muted label with its icon button right after it, on a line of its own. */
 export function LabelledButton({ text, icon, tooltip, onPress }: { text: string; icon: 'add' | 'close'; tooltip?: string; onPress: () => void }) {
@@ -216,16 +226,34 @@ export function ActionForm({ id, actions, projects }: { id: string | null; actio
     <Box background="accent" radius="lg" padding="sm" gap="md" margin="xs">
       <Box gap="xs">
         <Text size="sm">{action ? 'Edit action' : 'Add new action'}</Text>
-        {/* The placeholders show examples only, so the note says what is optional. */}
-        <Text size="xs" muted>
-          The commands run serially in order in the project's main checkout.
-        </Text>
-        <Text size="xs" muted>
-          Add a URL only if it differs from the one the server prints.
-        </Text>
+        {/* The placeholders show examples only, so the notes say what is optional. How the commands
+            run is said only when adding an action. */}
+        {action ? null : (
+          <Text size="xs" muted>
+            The commands run serially in order in the project's main checkout.
+          </Text>
+        )}
+        {/* The emoji picker's keys, each as code, and the icon field's ✎ placeholder; wraps on a narrow panel. */}
+        <Box direction="row" align="center" wrap gap="xs">
+          <Text size="xs" muted>
+            Icon (optional): press (
+          </Text>
+          <Code>⌃</Code>
+          <Text size="xs" muted>
+            +
+          </Text>
+          <Code>⌘</Code>
+          <Text size="xs" muted>
+            +
+          </Text>
+          <Code>Space</Code>
+          <Text size="xs" muted>
+            ) inside ✎
+          </Text>
+        </Box>
       </Box>
       {/* No visible labels: the placeholders name the fields, the hidden labels serve screen readers.
-          Project and name share a row, half each. */}
+          Project and name share a row, half each, with the optional icon at the start of the name's half. */}
       <Box direction="row" align="center" gap="sm">
         <Box grow minWidth={0} width="50%">
           <Select
@@ -237,12 +265,28 @@ export function ActionForm({ id, actions, projects }: { id: string | null; actio
             onChange={(projectId) => edit({ projectId })}
           />
         </Box>
-        <Box grow minWidth={0} width="50%">
-          <Input label="Name" labelHidden value={d.name} placeholder="Name" maxLength={40} onChange={(name) => edit({ name })} />
+        <Box grow minWidth={0} width="50%" direction="row" align="center" gap="xs">
+          <Box width={ICON_FIELD_PX} minWidth={ICON_FIELD_PX} shrink={false}>
+            <Input label="Icon" labelHidden value={d.icon} placeholder="✎" onChange={(icon) => edit({ icon })} />
+          </Box>
+          <Box grow minWidth={0}>
+            <Input label="Name" labelHidden value={d.name} placeholder="Name" maxLength={40} onChange={(name) => edit({ name })} />
+          </Box>
         </Box>
       </Box>
-      <StepRows steps={d.steps} onChange={(steps) => edit({ steps })} />
-      <Input label="URL" labelHidden value={d.url} placeholder="URL (optional)" onChange={(url) => edit({ url })} />
+      {/* A wider gap under Add step, so the URL does not read as another step. */}
+      <Box gap="lg">
+        <StepRows steps={d.steps} onChange={(steps) => edit({ steps })} />
+        {/* The URL's note sits under its field, inset to line up with the field's text. */}
+        <Box gap="sm">
+          <Input label="URL" labelHidden value={d.url} placeholder="URL (optional)" onChange={(url) => edit({ url })} />
+          <Box paddingX="sm">
+            <Text size="xs" muted>
+              URL (optional): if the URL differs from the one the server prints.
+            </Text>
+          </Box>
+        </Box>
+      </Box>
       {problem ? (
         <Text size="xs" tone="danger">
           {problem}
