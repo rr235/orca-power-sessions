@@ -102,28 +102,33 @@ export function ActionCard({ action }: { action: ActionStatus }) {
           {action.name}
         </Text>
       </Box>
-      {action.up && ours ? (
-        <IconButton icon="terminal" label={`Show ${action.name} terminal`} size="xs" variant="ghost" disabled={pending} onPress={() => startAction(action)} />
-      ) : null}
+      {/* Reserve optional controls so starting, stopping, or learning a URL never changes the name's space. */}
+      <Box direction="row" align="center" justify="center" width={SLOT_PX} minWidth={SLOT_PX} shrink={false}>
+        {action.up && ours ? (
+          <IconButton icon="terminal" label={`Show ${action.name} terminal`} size="xs" variant="ghost" disabled={pending} onPress={() => startAction(action)} />
+        ) : null}
+      </Box>
       {/* Before the server printed its address there is nothing to open yet. */}
-      {action.up && action.url ? (
-        <IconButton
-          icon="open-external"
-          label={`Open ${action.name}`}
-          tooltip={ours ? `Open ${action.url}` : `Open ${action.url} (no terminal to stop)`}
-          size="xs"
-          variant="ghost"
-          onPress={() => openAction(action)}
-        />
-      ) : null}
+      <Box direction="row" align="center" justify="center" width={SLOT_PX} minWidth={SLOT_PX} shrink={false}>
+        {action.up && action.url ? (
+          <IconButton
+            icon="open-external"
+            label={`Open ${action.name}`}
+            tooltip={ours ? `Open ${action.url}` : `Open ${action.url} (no terminal to stop)`}
+            size="xs"
+            variant="ghost"
+            onPress={() => openAction(action)}
+          />
+        ) : null}
+      </Box>
       {/* A running action shows the green dot of a working session, just before its Stop button. */}
-      {action.up ? (
-        <Box direction="row" align="center" justify="center" width={DOT_PX} minWidth={DOT_PX} shrink={false}>
+      <Box direction="row" align="center" justify="center" width={DOT_PX} minWidth={DOT_PX} shrink={false}>
+        {action.up ? (
           <Text size="xs" tone="success">
             ●
           </Text>
-        </Box>
-      ) : null}
+        ) : null}
+      </Box>
       <Box direction="row" align="center" justify="center" width={SLOT_PX} minWidth={SLOT_PX} shrink={false}>
         {control}
       </Box>
@@ -131,7 +136,7 @@ export function ActionCard({ action }: { action: ActionStatus }) {
   )
 }
 
-// The edit slot and the Run or Stop slot, in pixels, so names start and controls sit at the same place on every row.
+// Button slots stay the same width whether occupied or empty.
 const SLOT_PX = 24
 
 /** A muted label with its icon button right after it, on a line of its own. */

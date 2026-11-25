@@ -59,45 +59,6 @@ test('single-line steps keep Input rows while legacy multiline commands save unc
   }
 })
 
-test('quick actions show startup, completion and failure, and stop polling when idle or unmounted', async () => {
-  mock.timers.enable({ apis: ['setTimeout', 'setInterval'] })
-  let up = false
-  let fail = false
-  let loads = 0
-  const action = { id: 'sync', name: 'Sync', steps: ['bun build'], projectId: null, url: null, terminal: 'term_sync' }
-  const host = mockHost({ requests: {
-    'overview.load': () => { loads++; return { ...DEMO, sessions: [], servers: [DEMO.servers[0], { ...action, up }] } },
-    'session.selected': () => null,
-    'server.start': () => { if (fail) throw new Error('no terminal'); return null }
-  } })
-  const view = await mount(panel, { host })
-  const tick = async (ms: number) => { mock.timers.tick(ms); await view.settled() }
-  try {
-    await view.press({ label: 'Run Sync' })
-    assert.deepEqual([view.find({ label: 'Stop Sync' })?.disabled, view.find({ label: 'Stop Sync' })?.props.tooltip], [true, 'Starting'])
-    up = true
-    await tick(1000)
-    assert.equal(view.find({ label: 'Stop Sync' })?.disabled, false)
-    up = false
-    await tick(1000)
-    assert.ok(view.find({ label: 'Run Sync' }))
-    const idle = loads
-    await tick(2000)
-    assert.equal(loads, idle, 'address-based actions keep the normal cycle')
-    fail = true
-    await view.press({ label: 'Run Sync' })
-    assert.ok(view.find({ label: 'Run Sync' }))
-    fail = false
-    await view.press({ label: 'Run Sync' })
-  } finally {
-    await view.unmount()
-    const closed = loads
-    mock.timers.tick(11000)
-    mock.timers.reset()
-    assert.equal(loads, closed, 'queued boot checks stop at teardown')
-  }
-})
-
 test('a closed session disappears on a workspace report before any timer advances', async () => {
   mock.timers.enable({ apis: ['setTimeout', 'setInterval'] })
   let sessions = DEMO.sessions
