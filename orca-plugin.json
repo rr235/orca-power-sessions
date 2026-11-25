@@ -2,7 +2,7 @@
   "manifestVersion": 2,
   "id": "power-sessions",
   "name": "Power Sessions",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "See what every Claude and Codex agent is doing and how much it has used, compact long terminal sessions, and run your dev scripts.",
   "author": {
     "name": "rr235",
